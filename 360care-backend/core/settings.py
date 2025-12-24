@@ -27,6 +27,7 @@ DEBUG = True
 
 ALLOWED_HOSTS = [
                  "localhost",
+                 "https://vytal-3sqf.onrender.com",
                  "127.0.0.1",
                  ".ngrok-free.app",
                  ]
