@@ -34,6 +34,7 @@ ALLOWED_HOSTS = [
 
 CSRF_TRUSTED_ORIGINS = [
     "https://1f08b0e6a529.ngrok-free.app",
+    "https://vytal-3sqf.onrender.com",
     # if your backend is ALSO served via its own ngrok URL, add it too:
     # "https://<your-backend-subdomain>.ngrok-free.app",
 ]
