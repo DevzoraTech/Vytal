@@ -13,7 +13,7 @@ import {
   type Patient,
   type PatientDirectoryTab,
   type TreatmentPlanEntry,
-} from "./modules/patients/types";
+} from "./modules/patients/types"; //
 import {
   categorizePatientStatus,
   getLatestAdmission,
