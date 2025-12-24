@@ -26,17 +26,16 @@ SECRET_KEY = 'django-insecure-89nuhxgyqixmc2*6s2xas8&3$u#*30rvc+sxp_$2ua8cnjki1w
 DEBUG = True
 
 ALLOWED_HOSTS = [
-                 "localhost",
-                 "https://vytal-3sqf.onrender.com",
-                 "127.0.0.1",
-                 ".ngrok-free.app",
-                 ]
+    "localhost",
+    "127.0.0.1",
+    "vytal-3sqf.onrender.com",
+    ".ngrok-free.app",
+]
 
 CSRF_TRUSTED_ORIGINS = [
     "https://1f08b0e6a529.ngrok-free.app",
     "https://vytal-3sqf.onrender.com",
-    # if your backend is ALSO served via its own ngrok URL, add it too:
-    # "https://<your-backend-subdomain>.ngrok-free.app",
+    "https://vytal-frontend.netlify.app",
 ]
 
 
@@ -49,6 +48,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'corsheaders',
     'rest_framework',
     'rest_framework.authtoken',
     'care',
@@ -56,6 +56,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -131,6 +132,13 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 
 STATIC_URL = 'static/'
+
+CORS_ALLOWED_ORIGINS = [
+    "https://vytal-frontend.netlify.app",
+    "https://vytal-3sqf.onrender.com",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
