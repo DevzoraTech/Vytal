@@ -135,6 +135,7 @@ STATIC_URL = 'static/'
 
 CORS_ALLOWED_ORIGINS = [
     "https://vytal-frontend.netlify.app",
+    "https://vytal.devzoratech.com",
     "https://vytal-3sqf.onrender.com",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
