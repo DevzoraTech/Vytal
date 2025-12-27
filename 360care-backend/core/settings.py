@@ -29,6 +29,7 @@ ALLOWED_HOSTS = [
     "localhost",
     "127.0.0.1",
     "vytal-3sqf.onrender.com",
+    "vytal.devzoratech.com",
     ".ngrok-free.app",
 ]
 
@@ -36,6 +37,7 @@ CSRF_TRUSTED_ORIGINS = [
     "https://1f08b0e6a529.ngrok-free.app",
     "https://vytal-3sqf.onrender.com",
     "https://vytal-frontend.netlify.app",
+    "https://vytal.devzoratech.com",
 ]
 
 
@@ -140,6 +142,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
 ]
+CORS_ALLOW_CREDENTIALS = True
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
