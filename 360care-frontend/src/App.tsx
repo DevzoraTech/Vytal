@@ -40,9 +40,9 @@ import {
 import { CARD_CLASS, CARD_SECTION_CLASS } from "./ui/styles";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "/api";
-const TOKEN_STORAGE_KEY = "360care-token";
-const PATIENT_ID_PREFIX_KEY = "360care-patient-id-prefix";
-const PATIENT_ID_COUNTER_KEY = "360care-patient-id-counter";
+const TOKEN_STORAGE_KEY = "vytal-token";
+const PATIENT_ID_PREFIX_KEY = "vytal-patient-id-prefix";
+const PATIENT_ID_COUNTER_KEY = "vytal-patient-id-counter";
 
 const sanitizePrefix = (value: string) =>
   value
@@ -1719,84 +1719,144 @@ function App() {
   };
 
   const renderLogin = () => (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-b from-sky-200 via-sky-100 to-white px-4">
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute bottom-[-20%] left-[-10%] h-72 w-72 rounded-full bg-white opacity-60 blur-3xl" />
-        <div className="absolute top-[-10%] right-[-10%] h-96 w-96 rounded-full bg-sky-50 opacity-70 blur-3xl" />
+    <div className="grid min-h-screen grid-cols-1 bg-[#0F172A] text-slate-50 lg:grid-cols-2">
+      <div className="relative overflow-hidden bg-gradient-to-br from-[#0B1936] via-[#0F2A4D] to-[#0B1936] px-8 py-10 lg:px-12">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(59,130,246,0.18),transparent_35%),radial-gradient(circle_at_80%_0%,rgba(16,185,129,0.22),transparent_30%),radial-gradient(circle_at_50%_60%,rgba(14,165,233,0.16),transparent_35%)]" />
+        <div className="relative flex h-full flex-col justify-between gap-10">
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 text-xl font-semibold text-white">
+              V
+            </div>
+            <div>
+              <p className="text-sm uppercase tracking-[0.2em] text-sky-200/80">Secure Hospital Access</p>
+              <p className="text-xl font-semibold text-white">Vytal Command</p>
+            </div>
+          </div>
+          <div className="space-y-5">
+            <p className="text-xs uppercase tracking-[0.25em] text-sky-200/70">Enterprise clinical cloud</p>
+            <h1 className="text-4xl font-semibold leading-tight text-white lg:text-5xl">
+              Coordinate triage, lab, and treatment with confidence.
+            </h1>
+            <p className="max-w-xl text-base text-slate-200/90">
+              Encrypted access for authorised clinicians, nurses, and laboratory leads. Audit-ready sign in with regional failover and 24/7 monitoring.
+            </p>
+            <div className="grid gap-3 text-sm text-slate-200">
+              <div className="flex items-center gap-3">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-lg font-bold text-sky-200">01</span>
+                <div>
+                  <p className="font-semibold text-white">Zero-trust perimeter</p>
+                  <p className="text-slate-200/80">MFA-ready, token-based sessions with continuous validation.</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-lg font-bold text-emerald-200">02</span>
+                <div>
+                  <p className="font-semibold text-white">Clinical uptime</p>
+                  <p className="text-slate-200/80">Redundant endpoints to keep triage, lab, and bedside workflows online.</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-lg font-bold text-amber-200">03</span>
+                <div>
+                  <p className="font-semibold text-white">Data governance</p>
+                  <p className="text-slate-200/80">Audited access, immutable clinical notes, and least-privilege roles.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4 text-sm text-slate-200/80">
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+              <p className="text-xs uppercase tracking-wide text-slate-300/80">Facilities online</p>
+              <p className="mt-1 text-2xl font-semibold text-white">48</p>
+              <p>Across acute, outpatient, and diagnostic centers.</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+              <p className="text-xs uppercase tracking-wide text-slate-300/80">Protected sessions</p>
+              <p className="mt-1 text-2xl font-semibold text-white">99.99%</p>
+              <p>Uptime SLA with layered observability.</p>
+            </div>
+          </div>
+        </div>
       </div>
-      <form
-        onSubmit={handleLoginSubmit}
-        className="relative w-full max-w-lg space-y-6 rounded-[32px] border border-white/50 bg-white/70 px-8 py-10 shadow-[0_20px_60px_rgba(15,23,42,0.2)] backdrop-blur-xl"
-      >
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow">
-          <span className="text-2xl"></span>
-        </div>
-        <div className="text-center">
-          <h1 className="mt-2 text-3xl font-semibold text-slate-900">
-            Sign in with your credentials
-          </h1>
-          <p className="mt-2 text-sm text-slate-500">
-            Secure access for authorised medical staff only.
-          </p>
-        </div>
-        {loginError && (
-          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {loginError}
+
+      <div className="flex items-center justify-center bg-slate-50 px-4 py-10">
+        <div className="w-full max-w-xl rounded-[28px] border border-slate-200 bg-white p-10 shadow-[0_30px_80px_rgba(15,23,42,0.08)]">
+          <div className="mb-6 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Restricted area</p>
+              <h2 className="text-2xl font-semibold text-slate-900">Staff sign in</h2>
+              <p className="text-sm text-slate-500">Use your issued credentials. Contact ops for access.</p>
+            </div>
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-900 text-lg font-semibold text-white">
+              V
+            </div>
           </div>
-        )}
-        <div className="space-y-2">
-          <label className="text-sm font-semibold text-slate-600">
-            Username
-          </label>
-          <div className="flex items-center rounded-2xl border border-slate-200 bg-white px-3">
-            <span className="text-slate-400">👤</span>
-            <input
-              className="ml-2 w-full rounded-2xl border-none bg-transparent px-2 py-3 text-sm focus:outline-none"
-              value={loginForm.username}
-              onChange={(event) =>
-                setLoginForm((prev) => ({
-                  ...prev,
-                  username: event.target.value,
-                }))
-              }
-              placeholder="Enter your username"
-              required
-            />
-          </div>
+
+          {loginError && (
+            <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {loginError}
+            </div>
+          )}
+
+          <form className="space-y-5" onSubmit={handleLoginSubmit}>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-slate-700">Username</label>
+              <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 focus-within:border-slate-400">
+                <span className="text-slate-400">ID</span>
+                <input
+                  className="w-full bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
+                  value={loginForm.username}
+                  onChange={(event) =>
+                    setLoginForm((prev) => ({
+                      ...prev,
+                      username: event.target.value,
+                    }))
+                  }
+                  placeholder="clinic.user or email"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-slate-700">Password</label>
+              <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 focus-within:border-slate-400">
+                <span className="text-slate-400">PW</span>
+                <input
+                  type="password"
+                  className="w-full bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
+                  value={loginForm.password}
+                  onChange={(event) =>
+                    setLoginForm((prev) => ({
+                      ...prev,
+                      password: event.target.value,
+                    }))
+                  }
+                  placeholder="Enter your password"
+                  required
+                />
+                <button
+                  type="button"
+                  className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+                >
+                  Forgot?
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={loginSubmitting}
+            >
+              {loginSubmitting ? "Signing in..." : "Enter workspace"}
+            </button>
+            <p className="text-center text-xs text-slate-500">
+              Helpdesk: ops@vytal.local | Always-on SOC monitoring
+            </p>
+          </form>
         </div>
-        <div className="space-y-2">
-          <label className="text-sm font-semibold text-slate-600">
-            Password
-          </label>
-          <div className="flex items-center rounded-2xl border border-slate-200 bg-white px-3">
-            <span className="text-slate-400">🔒</span>
-            <input
-              type="password"
-              className="ml-2 w-full rounded-2xl border-none bg-transparent px-2 py-3 text-sm focus:outline-none"
-              value={loginForm.password}
-              onChange={(event) =>
-                setLoginForm((prev) => ({
-                  ...prev,
-                  password: event.target.value,
-                }))
-              }
-              placeholder="Enter your password"
-              required
-            />
-            <div className="text-xs text-slate-400">Forgot?</div>
-          </div>
-        </div>
-        <button
-          type="submit"
-          className="w-full rounded-full bg-gradient-to-r from-slate-900 to-slate-800 px-4 py-3 text-sm font-semibold text-white shadow-lg disabled:opacity-60"
-          disabled={loginSubmitting}
-        >
-          {loginSubmitting ? "Signing in…" : "Login"}
-        </button>
-        <div className="text-center text-xs text-slate-400">
-          Need access? Contact the administrator to create an account.
-        </div>
-      </form>
+      </div>
     </div>
   );
 
@@ -1814,11 +1874,11 @@ function App() {
         }`}
       >
         <div className="rounded-lg bg-[#1D4ED8]/30 px-4 py-2 text-lg font-semibold text-white">
-          360
+          V
         </div>
         {!sidebarCollapsed && (
           <div>
-            <p className="text-sm font-semibold text-white">360Care</p>
+            <p className="text-sm font-semibold text-white">Vytal</p>
             <p className="text-xs text-neutral-400">Paleo Medicals</p>
           </div>
         )}
