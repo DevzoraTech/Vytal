@@ -160,6 +160,8 @@ class TriageEntrySerializer(serializers.ModelSerializer):
             'contact_phone',
             'symptoms',
             'allergies',
+            'recorded_by_name',
+            'recorded_by_role',
             'temperature_c',
             'weight_kg',
             'status',
@@ -180,6 +182,7 @@ class LabResultSerializer(serializers.ModelSerializer):
     recorded_at = serializers.DateTimeField(required=False, allow_null=True)
     payload = serializers.JSONField(required=False)
     patient_name = serializers.SerializerMethodField()
+    patient_identifier = serializers.SerializerMethodField()
     admission_id = serializers.IntegerField(source='admission.id', read_only=True)
     triage_entry_id = serializers.IntegerField(source='triage_entry.id', read_only=True)
     recorded_by_name = serializers.CharField(required=False, allow_blank=True)
@@ -197,6 +200,7 @@ class LabResultSerializer(serializers.ModelSerializer):
             'id',
             'patient',
             'patient_name',
+            'patient_identifier',
             'admission',
             'admission_id',
             'triage_entry',
@@ -219,6 +223,9 @@ class LabResultSerializer(serializers.ModelSerializer):
     def get_patient_name(self, obj):
         return str(obj.patient)
 
+    def get_patient_identifier(self, obj):
+        return getattr(obj.patient, "patient_identifier", None)
+
 
 class LabOrderSerializer(serializers.ModelSerializer):
     admission = serializers.PrimaryKeyRelatedField(
@@ -234,6 +241,7 @@ class LabOrderSerializer(serializers.ModelSerializer):
     )
     patient_id = serializers.SerializerMethodField()
     patient_name = serializers.SerializerMethodField()
+    patient_identifier = serializers.SerializerMethodField()
     created_by = serializers.PrimaryKeyRelatedField(read_only=True)
 
     class Meta:
@@ -245,6 +253,7 @@ class LabOrderSerializer(serializers.ModelSerializer):
             'ordered_by',
             'patient_id',
             'patient_name',
+            'patient_identifier',
             'created_by',
             'status',
             'priority',
@@ -264,6 +273,11 @@ class LabOrderSerializer(serializers.ModelSerializer):
         patient = getattr(obj, "admission", None)
         if patient and patient.patient_id:
             return str(patient.patient)
+        return None
+
+    def get_patient_identifier(self, obj):
+        if obj.admission_id and obj.admission.patient_id:
+            return obj.admission.patient.patient_identifier
         return None
 
 
@@ -443,6 +457,28 @@ class PatientSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {'initial_admission': 'Initial admission details are required.'}
             )
+        if not validated_data.get('patient_identifier'):
+            prefix = "PM"
+            last_patient = (
+                Patient.objects.filter(patient_identifier__startswith=prefix)
+                .exclude(patient_identifier="")
+                .order_by('-patient_identifier')
+                .first()
+            )
+            letter = "A"
+            number = 1
+            if last_patient:
+                pid = last_patient.patient_identifier.upper()
+                if len(pid) >= 4:
+                    letter = pid[2] if pid[2].isalpha() else "A"
+                    try:
+                        number = int(pid[3:]) + 1
+                    except ValueError:
+                        number = 1
+                    if number > 9999:
+                        number = 1
+                        letter = chr(ord(letter) + 1) if letter != "Z" else "A"
+            validated_data['patient_identifier'] = f"{prefix}{letter}{number:04d}"
         patient = super().create(validated_data)
         Admission.objects.create(patient=patient, **admission_data)
         return patient

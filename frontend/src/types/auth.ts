@@ -9,8 +9,7 @@ export type ModuleKey =
   | "consultation"
   | "inventory"
   | "reports"
-  | "support"
-  | "care-bridge";
+  | "support";
 
 export interface User {
   id: number;
@@ -33,5 +32,4 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
   inventory: "Inventory",
   reports: "Reports",
   support: "Support",
-  "care-bridge": "Care Bridge",
 };

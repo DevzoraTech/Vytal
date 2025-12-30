@@ -85,16 +85,7 @@ const PatientHeader = ({
                 value={searchTerm}
                 onChange={(event) => onSearchTermChange(event.target.value)}
               />
-              <span className="text-xs text-[#9CA3AF]">⌕</span>
             </div>
-            <button
-              onClick={onToggleSidebar}
-              className="inline-flex items-center rounded-full border border-[#E5E7EB] px-3 py-2 text-xs font-semibold text-[#4B5563] hover:bg-[#F3F4F6] sm:hidden"
-              title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-              type="button"
-            >
-              {sidebarCollapsed ? "☰" : "×"}
-            </button>
           </div>
         </div>
       </div>

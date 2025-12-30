@@ -18,6 +18,33 @@ interface TriageModuleProps {
   fetchError?: string | null;
 }
 
+const exportToCsv = (filename: string, rows: Record<string, unknown>[]) => {
+  if (!rows.length) return;
+  const headers = Object.keys(rows[0]);
+  const csv = [
+    headers.join(","),
+    ...rows.map((row) =>
+      headers
+        .map((key) => {
+          const cell = row[key];
+          const value =
+            cell === null || cell === undefined ? "" : String(cell).replace(/"/g, '""');
+          return `"${value}"`;
+        })
+        .join(",")
+    ),
+  ].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.setAttribute("download", filename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
+
 const TriageModule = ({
   activeTab: _activeTab,
   onTabChange: _onTabChange,
@@ -34,6 +61,7 @@ const TriageModule = ({
   const [searchTerm, setSearchTerm] = useState("");
   const PAGE_SIZE = 10;
   const [page, setPage] = useState(1);
+  const [exportOpen, setExportOpen] = useState(false);
 
   const filteredPatients = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
@@ -60,6 +88,22 @@ const TriageModule = ({
     (page - 1) * PAGE_SIZE,
     (page - 1) * PAGE_SIZE + PAGE_SIZE
   );
+
+  const handleExportCsv = () => {
+    const rows = filteredPatients.map((p) => ({
+      id: p.id,
+      name: p.name,
+      age: p.age,
+      sex: p.sex,
+      arrival: p.arrival,
+      status: p.status,
+      symptoms: p.symptoms,
+      temperature: p.temperature,
+      date: p.date,
+    }));
+    exportToCsv("triage_patients.csv", rows);
+    setExportOpen(false);
+  };
 
   useEffect(() => {
     if (page > totalPages) {
@@ -123,9 +167,9 @@ const TriageModule = ({
                   <button
                     type="button"
                     onClick={() => setAssessmentOpen(false)}
-                    className="rounded-full border border-slate-200 px-3 py-1 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                    className="rounded-full border border-slate-200 text-[#cc0000] px-3 py-1 text-sm font-semibold text-slate-600 hover:bg-slate-50"
                   >
-                    Close
+                    X
                   </button>
                 </header>
 
@@ -133,14 +177,9 @@ const TriageModule = ({
                   <div className="space-y-6">
                     <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
                       <div className="mb-4">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                        <p className="text-xs text-lg font-semibold text-slate-900">
                           Administrative &amp; Demographics
                         </p>
-                        <div className="mt-1 flex items-center justify-between">
-                          <div className="text-lg font-semibold text-slate-900">
-                            Intake details
-                          </div>
-                        </div>
                       </div>
                       {errorMessage && (
                         <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
@@ -294,12 +333,9 @@ const TriageModule = ({
 
                     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                       <div className="mb-4">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                        <p className="text-xs text-lg font-semibold text-slate-900">
                           Clinical presentation
                         </p>
-                        <div className="mt-1 text-lg font-semibold text-slate-900">
-                          Symptoms & vitals
-                        </div>
                         <p className="text-sm text-slate-500">
                           Capture primary complaints and initial measurements.
                         </p>
@@ -316,7 +352,7 @@ const TriageModule = ({
                               onChange={(event) =>
                                 onFieldChange("temperature", event.target.value)
                               }
-                              placeholder="e.g. 38.5"
+                              placeholder="e.g. 37.5"
                             />
                           </div>
                           <div className="flex flex-col">
@@ -336,7 +372,7 @@ const TriageModule = ({
                             <label className="mb-1 text-gray-600">Symptoms</label>
                             <textarea
                               className="rounded-lg border border-gray-300 bg-white px-3 py-2"
-                              rows={3}
+                              rows={2}
                               value={form.symptoms}
                               onChange={(event) =>
                                 onFieldChange("symptoms", event.target.value)
@@ -348,7 +384,7 @@ const TriageModule = ({
                             <label className="mb-1 text-gray-600">Allergies</label>
                             <textarea
                               className="rounded-lg border border-gray-300 bg-white px-3 py-2"
-                              rows={3}
+                              rows={2}
                               value={form.allergies}
                               onChange={(event) =>
                                 onFieldChange("allergies", event.target.value)
@@ -417,6 +453,27 @@ const TriageModule = ({
                     ? ` of ${patients.length}`
                     : ""}
                 </span>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setExportOpen((prev) => !prev)}
+                    className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+                  >
+                    Export
+                    <span className="text-[10px]">▾</span>
+                  </button>
+                  {exportOpen && (
+                    <div className="absolute right-0 mt-2 w-40 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
+                      <button
+                        type="button"
+                        onClick={handleExportCsv}
+                        className="block w-full px-4 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                      >
+                        Export to CSV
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
             <div className="overflow-hidden rounded-xl border border-slate-200">
@@ -477,17 +534,7 @@ const TriageModule = ({
                               {patient.status}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-right">
-                            <button
-                              onClick={() => {
-                                onEdit(patient);
-                                setAssessmentOpen(true);
-                              }}
-                              className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50"
-                            >
-                              Edit
-                            </button>
-                          </td>
+                          <td className="px-4 py-3 text-right"></td>
                         </tr>
                       );
                     })

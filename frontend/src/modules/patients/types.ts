@@ -97,6 +97,8 @@ export interface LabResultEntry {
   id: number;
   admission: number;
   patient: number;
+  patient_identifier?: string;
+  patient_name?: string;
   test_type: string;
   summary: string;
   recorded_at: string;

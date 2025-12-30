@@ -5,8 +5,21 @@ export default {
     extend: {
       colors: {
         brand: {
-          DEFAULT: '#2563EB',
-          hover: '#1D4ED8',
+          DEFAULT: '#008000',
+          hover: '#006900',
+        },
+        blue: {
+          50: '#e6f5e6',
+          100: '#cdeacc',
+          200: '#9dd59d',
+          300: '#6dc16d',
+          400: '#3cad3c',
+          500: '#1f991f',
+          600: '#008000',
+          700: '#006900',
+          800: '#004f00',
+          900: '#003b00',
+          950: '#002600',
         },
         mint: {
           DEFAULT: '#10B981',

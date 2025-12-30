@@ -255,13 +255,12 @@ const PatientDetails = ({
           value: formatValue(latestAdmission?.contraindications),
         },
       ];
-      const labNotes =
-        latestAdmission?.clinical_notes.filter(isLabNote) ?? [];
       const labEntries =
-        labNotes.length > 0
-          ? labNotes.map((note) => ({
-              label: formatDateTime(note.documented_at),
-              value: note.treatment_details || "Result recorded",
+        labResults.length > 0
+          ? labResults.map((result) => ({
+              label: `${result.test_type} · ${formatDateTime(result.recorded_at)}`,
+              value: result.summary || "Result recorded",
+              meta: `${result.recorded_by_name || "Lab"} (${result.recorded_by_role || "Laboratory"})`,
             }))
           : (latestAdmission?.lab_tests_done || "")
               .split(/\n+/)
@@ -270,6 +269,7 @@ const PatientDetails = ({
               .map((value, index) => ({
                 label: `Lab ${index + 1}`,
                 value,
+                meta: "",
               }));
       const treatmentPlanSummary = `${formatValue(
         latestAdmission?.treatment_duration,
@@ -526,6 +526,9 @@ const PatientDetails = ({
                       <p className="mt-1 font-semibold text-gray-900">
                         {entry.value}
                       </p>
+                      {entry.meta && (
+                        <p className="text-[11px] text-gray-500">{entry.meta}</p>
+                      )}
                     </div>
                   ))
                 )}
@@ -637,11 +640,11 @@ const PatientDetails = ({
                     >
                       {entry.status}
                     </span>
-                    <span className="rounded-full bg-[#E5EDFF] px-3 py-1 text-[#2563EB]">
+                    <span className="rounded-full bg-[#E5F5E5] px-3 py-1 text-[#008000]">
                       {entry.outcome}
                     </span>
                   </div>
-                  <button className="text-xs font-semibold text-[#2563EB] hover:text-[#1D4ED8] hover:underline">
+                  <button className="text-xs font-semibold text-[#008000] hover:text-[#008000] hover:underline">
                     Open clinical note
                   </button>
                 </div>
@@ -682,7 +685,7 @@ const PatientDetails = ({
                         plan.status === "Due"
                           ? "bg-[#FEF3C7] text-[#B45309]"
                           : plan.status === "Scheduled"
-                          ? "bg-[#E5EDFF] text-[#2563EB]"
+                          ? "bg-[#E5F5E5] text-[#008000]"
                           : "bg-[#E5E7EB] text-[#4B5563]"
                       }`}
                     >
@@ -830,7 +833,7 @@ const PatientDetails = ({
             </div>
             <button
               type="submit"
-              className="w-full rounded-full bg-[#2563EB] px-4 py-2 text-sm font-semibold text-white shadow-subtle disabled:opacity-60 hover:bg-[#1D4ED8]"
+              className="w-full rounded-full bg-[#008000] px-4 py-2 text-sm font-semibold text-white shadow-subtle disabled:opacity-60 hover:bg-[#008000]"
               disabled={treatmentSubmitting}
             >
               {treatmentSubmitting ? "Saving…" : "Update plan"}
@@ -966,7 +969,7 @@ const PatientDetails = ({
       <section className={`${CARD_SECTION_CLASS} space-y-6`}>
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#E5EDFF] text-xl font-semibold text-[#2563EB]">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#E5F5E5] text-xl font-semibold text-[#008000]">
               {initials || "PT"}
             </div>
             <div>
@@ -998,7 +1001,7 @@ const PatientDetails = ({
                 setPatientTab("Records");
                 setShowClinicalForm(true);
               }}
-              className="rounded-full bg-[#2563EB] px-5 py-2 text-sm font-semibold text-white shadow-subtle hover:bg-[#1D4ED8]"
+              className="rounded-full bg-[#008000] px-5 py-2 text-sm font-semibold text-white shadow-subtle hover:bg-[#008000]"
               disabled={isDischarged}
             >
               {isDischarged ? "Discharged" : "Record Treatment"}
@@ -1021,7 +1024,7 @@ const PatientDetails = ({
                 onClick={() => setPatientTab(tab)}
                 className={`rounded-full px-4 py-1 transition-colors ${
                   patientTab === tab
-                    ? "bg-[#2563EB] text-white shadow-subtle"
+                    ? "bg-[#008000] text-white shadow-subtle"
                     : "bg-[#E5E7EB] text-[#4B5563] hover:bg-[#e0e2e7]"
                 }`}
               >

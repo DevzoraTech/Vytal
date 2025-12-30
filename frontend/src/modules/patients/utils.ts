@@ -8,9 +8,12 @@ const hasLabClearance = (admission: Admission | null) => {
   if (!admission) {
     return false;
   }
+  const notes = Array.isArray(admission.clinical_notes)
+    ? admission.clinical_notes
+    : [];
   return Boolean(
     (admission.lab_tests_done ?? "").trim().length > 0 ||
-      admission.clinical_notes.some(isLabNote)
+      notes.some(isLabNote)
   );
 };
 
@@ -18,23 +21,40 @@ const hasTreatmentNote = (admission: Admission | null) => {
   if (!admission) {
     return false;
   }
-  return admission.clinical_notes.some((note) => !isLabNote(note));
+  const notes = Array.isArray(admission.clinical_notes)
+    ? admission.clinical_notes
+    : [];
+  return notes.some((note) => {
+    const role = (note.recorded_by_role || "").toLowerCase();
+    const isTriaged = role.includes("triage");
+    return !isLabNote(note) && !isTriaged;
+  });
 };
 
 export const patientReadyForTreatment = (patient: Patient) =>
-  patient.admissions.some(
-    (admission) => (admission.lab_tests_done ?? "").trim().length > 0
+  (Array.isArray(patient.admissions) ? patient.admissions : []).some(
+    (admission) => {
+      const hasLabString = (admission.lab_tests_done ?? "").trim().length > 0;
+      const notes = Array.isArray(admission.clinical_notes)
+        ? admission.clinical_notes
+        : [];
+      const hasLabNote = notes.some(isLabNote);
+      return hasLabString || hasLabNote;
+    }
   );
 
 export const getLatestAdmission = (patient: Patient) => {
-  if (patient.admissions.length === 0) {
+  const admissions = Array.isArray(patient.admissions)
+    ? patient.admissions
+    : [];
+  if (admissions.length === 0) {
     return null;
   }
-  return patient.admissions.reduce((latest, admission) => {
+  return admissions.reduce((latest, admission) => {
     const latestTime = Date.parse(latest.admission_date);
     const currentTime = Date.parse(admission.admission_date);
     return currentTime > latestTime ? admission : latest;
-  }, patient.admissions[0]);
+  }, admissions[0]);
 };
 
 export const categorizePatientStatus = (

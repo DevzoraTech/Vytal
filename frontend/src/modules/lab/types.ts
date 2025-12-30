@@ -9,6 +9,7 @@ export interface LabQueueEntry {
   date: string;
   symptoms: string;
   status: string;
+  patient_identifier?: string | null;
 }
 
 export interface LabRecordEntry {
@@ -35,6 +36,7 @@ export interface LabOrder {
   ordered_by: number | null;
   patient_id?: number | null;
   patient_name?: string | null;
+  patient_identifier?: string | null;
   status: "draft" | "submitted" | "in_progress" | "completed" | "cancelled";
   priority: "routine" | "urgent";
   order_items: string[];
@@ -44,17 +46,33 @@ export interface LabOrder {
   created_at: string;
 }
 
+export interface LabTask {
+  id: number;
+  admission: number;
+  lab_order: number | null;
+  task_type: string;
+  target_role: string;
+  status: string;
+  message: string;
+  created_at: string;
+}
+
 export const LAB_TESTS = [
   "Blood Slide",
-  "MRST",
-  "CBC (Complete Blood Count)",
+  "Widal Typhoid IgG",
+  "H. pylori Ab",
+  "HCT",
+  "RPR / VDRL",
+  "HBsAg",
+  "BAT",
+  "H. pylori Ag",
+  "HCG Urine",
+  "HCG Serum",
+  "MRDT",
+  "Blood Group",
   "Urinalysis",
-  "H. Pylori Antibody",
-  "Blood Grouping (ABO + Rh)",
-  "Typhoid Test",
-  "HCT (Hematocrit)",
-  "VDRL / RPR",
-  "HCG (Urine)",
-  "RBS (Random Blood Sugar)",
-  "HCG (Serum)",
+  "Stool Analysis",
+  "RBS / FBS",
+  "Electrolytes",
+  "Rheumatoid Factor",
 ] as const;

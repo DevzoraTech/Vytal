@@ -1,4 +1,11 @@
-import type { LabOrder, LabQueueEntry, LabRecordEntry, LabTab } from "./types";
+import { useState } from "react";
+import type {
+  LabOrder,
+  LabQueueEntry,
+  LabRecordEntry,
+  LabTab,
+  LabTask,
+} from "./types";
 
 interface LabModuleProps {
   activeTab: LabTab;
@@ -6,12 +13,41 @@ interface LabModuleProps {
   queue: LabQueueEntry[];
   records: LabRecordEntry[];
   orders: LabOrder[];
+  tasks: LabTask[];
   onRecord: (entry: LabQueueEntry) => void;
   onRefreshQueue: () => void;
   onRefreshRecords: () => void;
   onRefreshOrders: () => void;
+  onRefreshTasks: () => void;
   fetchError?: string | null;
 }
+
+const exportToCsv = (filename: string, rows: Record<string, unknown>[]) => {
+  if (!rows.length) return;
+  const headers = Object.keys(rows[0]);
+  const csv = [
+    headers.join(","),
+    ...rows.map((row) =>
+      headers
+        .map((key) => {
+          const cell = row[key];
+          const value =
+            cell === null || cell === undefined ? "" : String(cell).replace(/"/g, '""');
+          return `"${value}"`;
+        })
+        .join(",")
+    ),
+  ].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.setAttribute("download", filename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
 
 const LabModule = ({
   activeTab,
@@ -19,12 +55,63 @@ const LabModule = ({
   queue,
   records,
   orders,
+  tasks,
   onRecord,
   onRefreshQueue,
   onRefreshRecords,
   onRefreshOrders,
+  onRefreshTasks,
   fetchError,
 }: LabModuleProps) => {
+  const [queueExportOpen, setQueueExportOpen] = useState(false);
+  const [recordsExportOpen, setRecordsExportOpen] = useState(false);
+  const [ordersExportOpen, setOrdersExportOpen] = useState(false);
+  const handleExportQueue = () => {
+    if (!queue.length) return;
+    const rows = queue.map((entry) => ({
+      id: entry.id,
+      name: entry.name,
+      age: entry.age,
+      sex: entry.sex,
+      arrival: entry.arrival,
+      date: entry.date,
+      symptoms: entry.symptoms,
+      status: entry.status,
+    }));
+    exportToCsv("lab_queue.csv", rows);
+    setQueueExportOpen(false);
+  };
+
+  const handleExportRecords = () => {
+    if (!records.length) return;
+    const rows = records.map((entry) => ({
+      id: entry.id,
+      patient: entry.patient_name,
+      test: entry.test_type,
+      summary: entry.summary,
+      recorded_by: entry.recorded_by_name,
+      recorded_at: entry.recorded_at,
+    }));
+    exportToCsv("lab_records.csv", rows);
+    setRecordsExportOpen(false);
+  };
+
+  const handleExportOrders = () => {
+    if (!orders.length) return;
+    const rows = orders.map((order) => ({
+      id: order.id,
+      patient: order.patient_identifier || order.patient_name || "Patient",
+      internal_id: order.patient_id ?? "",
+      priority: order.priority,
+      items: order.order_items.join("; "),
+      notes: order.clinical_question || order.notes_to_lab || "",
+      status: order.status,
+      created_at: order.created_at,
+    }));
+    exportToCsv("lab_orders.csv", rows);
+    setOrdersExportOpen(false);
+  };
+
   const renderQueue = () => (
     <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
       <div className="mb-4 flex items-center justify-between">
@@ -34,13 +121,35 @@ const LabModule = ({
             Patients awaiting lab results entry.
           </p>
         </div>
-        <button
-          type="button"
-          className="text-sm font-semibold text-blue-600 hover:text-blue-700"
-          onClick={onRefreshQueue}
-        >
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <button
+              type="button"
+              className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+              onClick={() => setQueueExportOpen((prev) => !prev)}
+            >
+              Export <span className="text-[10px]">▾</span>
+            </button>
+            {queueExportOpen && (
+              <div className="absolute right-0 mt-2 w-40 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
+                <button
+                  type="button"
+                  onClick={handleExportQueue}
+                  className="block w-full px-4 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Export to CSV
+                </button>
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            className="text-sm font-semibold text-blue-600 hover:text-blue-700"
+            onClick={onRefreshQueue}
+          >
+            Refresh
+          </button>
+        </div>
       </div>
       <div className="overflow-x-auto">
         {fetchError && (
@@ -109,13 +218,35 @@ const LabModule = ({
             Completed lab entries forwarded to patient records.
           </p>
         </div>
-        <button
-          type="button"
-          className="text-sm font-semibold text-blue-600 hover:text-blue-700"
-          onClick={onRefreshRecords}
-        >
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <button
+              type="button"
+              className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+              onClick={() => setRecordsExportOpen((prev) => !prev)}
+            >
+              Export <span className="text-[10px]">▾</span>
+            </button>
+            {recordsExportOpen && (
+              <div className="absolute right-0 mt-2 w-40 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
+                <button
+                  type="button"
+                  onClick={handleExportRecords}
+                  className="block w-full px-4 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Export to CSV
+                </button>
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            className="text-sm font-semibold text-blue-600 hover:text-blue-700"
+            onClick={onRefreshRecords}
+          >
+            Refresh
+          </button>
+        </div>
       </div>
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200 text-sm">
@@ -169,20 +300,41 @@ const LabModule = ({
           <h2 className="text-lg font-semibold text-gray-900">Orders from clinicians</h2>
           <p className="text-sm text-gray-500">Submitted lab orders requiring attention.</p>
         </div>
-        <button
-          type="button"
-          className="text-sm font-semibold text-blue-600 hover:text-blue-700"
-          onClick={onRefreshOrders}
-        >
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <button
+              type="button"
+              className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+              onClick={() => setOrdersExportOpen((prev) => !prev)}
+            >
+              Export <span className="text-[10px]">▾</span>
+            </button>
+            {ordersExportOpen && (
+              <div className="absolute right-0 mt-2 w-40 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
+                <button
+                  type="button"
+                  onClick={handleExportOrders}
+                  className="block w-full px-4 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Export to CSV
+                </button>
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            className="text-sm font-semibold text-blue-600 hover:text-blue-700"
+            onClick={onRefreshOrders}
+          >
+            Refresh
+          </button>
+        </div>
       </div>
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200 text-sm">
           <thead className="text-left text-xs uppercase text-gray-500">
             <tr>
               <th className="pb-3 pr-3 font-semibold">Patient</th>
-              <th className="pb-3 pr-3 font-semibold">Admission</th>
               <th className="pb-3 pr-3 font-semibold">Priority</th>
               <th className="pb-3 pr-3 font-semibold">Items</th>
               <th className="pb-3 pr-3 font-semibold">Notes</th>
@@ -202,13 +354,12 @@ const LabModule = ({
                 <tr key={order.id}>
                   <td className="py-3 pr-3">
                     <div className="font-semibold">
-                      {order.patient_name || "Patient"}
+                      {order.patient_identifier || order.patient_name || "Patient"}
                     </div>
                     <div className="text-xs text-gray-500">
-                      ID: {order.patient_id ?? "—"}
+                      Internal ID: {order.patient_id ?? "—"}
                     </div>
                   </td>
-                  <td className="py-3 pr-3">#{order.admission}</td>
                   <td className="py-3 pr-3 capitalize">{order.priority}</td>
                   <td className="py-3 pr-3 text-sm text-gray-600">
                     {order.order_items.join(", ") || "—"}
@@ -227,6 +378,38 @@ const LabModule = ({
             )}
           </tbody>
         </table>
+      </div>
+      <div className="mt-4 rounded-lg border border-gray-100 bg-gray-50 p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <div className="text-sm font-semibold text-gray-800">Consultation tasks for Lab</div>
+          <button
+            type="button"
+            className="text-xs font-semibold text-blue-600 hover:text-blue-700"
+            onClick={onRefreshTasks}
+          >
+            Refresh
+          </button>
+        </div>
+        {tasks.length === 0 ? (
+          <p className="text-xs text-gray-500">No open tasks assigned to Lab.</p>
+        ) : (
+          <ul className="space-y-2 text-sm text-gray-700">
+            {tasks.map((task) => (
+              <li
+                key={task.id}
+                className="rounded-md border border-gray-200 bg-white px-3 py-2"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="font-semibold capitalize">{task.task_type.replace("_", " ")}</div>
+                  <span className="text-xs text-gray-500">
+                    #{task.admission} · {new Date(task.created_at).toLocaleString()}
+                  </span>
+                </div>
+                <div className="text-xs text-gray-600">{task.message || "Task assigned to lab"}</div>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </section>
   );

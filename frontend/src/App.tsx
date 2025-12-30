@@ -20,7 +20,6 @@ import {
   isLabNote,
   patientReadyForTreatment,
 } from "./modules/patients/utils";
-import CareBridgeModule from "./modules/care-bridge/CareBridgeModule";
 import ConsultationModule from "./modules/consultation/ConsultationModule";
 import { MODULE_LABELS, type ModuleKey, type User } from "./types/auth";
 import {
@@ -36,10 +35,11 @@ import {
   type LabRecordEntry,
   type LabOrder,
   type LabResultFormState,
+  type LabTask,
   type LabTab,
   LAB_TESTS,
 } from "./modules/lab/types";
-import type { CarePlan } from "./modules/consultation/types";
+import type { CarePlan, ConsultationEvent } from "./modules/consultation/types";
 import { CARD_CLASS, CARD_SECTION_CLASS } from "./ui/styles";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "/api";
@@ -57,7 +57,7 @@ const escapeRegExp = (value: string) =>
 
 type NavIcon = (props: { active: boolean }) => JSX.Element;
 
-const strokeColor = (active: boolean) => (active ? "#2563EB" : "#9CA3AF");
+const strokeColor = (active: boolean) => (active ? "#008000" : "#9CA3AF");
 
 const DashboardIcon: NavIcon = ({ active }) => (
   <svg
@@ -258,26 +258,6 @@ const SupportIcon: NavIcon = ({ active }) => (
   </svg>
 );
 
-const BridgeIcon: NavIcon = ({ active }) => (
-  <svg
-    width="20"
-    height="20"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke={strokeColor(active)}
-    strokeWidth="1.8"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <path d="M4 15c0-4 3.6-7 8-7s8 3 8 7" />
-    <path d="M4 15v4" />
-    <path d="M20 15v4" />
-    <path d="M4 17h16" />
-    <circle cx="9" cy="11.5" r="1" />
-    <circle cx="15" cy="11.5" r="1" />
-  </svg>
-);
-
 const NAV_SECTIONS: {
   title: string;
   items: { key: ModuleKey; label: string; icon: NavIcon }[];
@@ -287,13 +267,12 @@ const NAV_SECTIONS: {
     items: [
       { key: "dashboard", label: "Dashboard", icon: DashboardIcon },
       { key: "triage", label: "Triage", icon: TriageIcon },
-      { key: "patients", label: "Patients", icon: PatientsIcon },
+      { key: "patients", label: "Clinician", icon: PatientsIcon },
       { key: "consultation", label: "Consultation", icon: ConsultationIcon },
       { key: "appointments", label: "Appointments", icon: CalendarIcon },
       { key: "billing", label: "Finance", icon: BillingIcon },
       { key: "pharmacy", label: "Pharmacy", icon: PharmacyIcon },
       { key: "laboratory", label: "Laboratory", icon: LabIcon },
-      { key: "care-bridge", label: "Care Bridge", icon: BridgeIcon },
       { key: "inventory", label: "Inventory", icon: InventoryIcon },
       { key: "reports", label: "Reports", icon: ReportsIcon },
       { key: "support", label: "Support", icon: SupportIcon },
@@ -326,6 +305,11 @@ function App() {
   const [patientDirectoryTab, setPatientDirectoryTab] =
     useState<PatientDirectoryTab>("Queue");
   const [patientDirectoryPage, setPatientDirectoryPage] = useState(1);
+  const getLocalISODate = () => {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    return now.toISOString().split("T")[0];
+  };
   const [activeModule, setActiveModule] = useState<ModuleKey>("dashboard");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -361,6 +345,8 @@ function App() {
     createDefaultTriageForm()
   );
   const [carePlans, setCarePlans] = useState<CarePlan[]>([]);
+  const [patientEvents, setPatientEvents] = useState<ConsultationEvent[]>([]);
+  const [patientLabResults, setPatientLabResults] = useState<LabResultEntry[]>([]);
   const [triagePatients, setTriagePatients] = useState<TriagePatientEntry[]>(
     []
   );
@@ -370,7 +356,11 @@ function App() {
   const [labQueue, setLabQueue] = useState<LabQueueEntry[]>([]);
   const [labRecords, setLabRecords] = useState<LabRecordEntry[]>([]);
   const [labOrders, setLabOrders] = useState<LabOrder[]>([]);
+  const [labTasks, setLabTasks] = useState<LabTask[]>([]);
   const [labModalOpen, setLabModalOpen] = useState(false);
+  const [labCompletedTests, setLabCompletedTests] = useState<
+    Record<number, Set<string>>
+  >({});
   const [labResultForm, setLabResultForm] = useState<LabResultFormState>({
     triageEntryId: null,
     testType: "",
@@ -382,20 +372,67 @@ function App() {
   const [labFetchError, setLabFetchError] = useState<string | null>(null);
   const [labCategory, setLabCategory] = useState("");
   const [labNumeric, setLabNumeric] = useState("");
-  const defaultBloodSlide = {
-    result: "",
-    species: "",
-    speciesMixed: {
-      falciparum: false,
-      vivax: false,
-      malariae: false,
-      ovale: false,
-    },
-    parasitemia: "",
+  const defaultUrinalysis = {
+    leukocytes: "",
+    nitrite: "",
+    urobilinogen: "",
+    protein: "",
+    ph: "",
+    specific_gravity: "",
+    blood: "",
+    ketone: "",
+    bilirubin: "",
+    glucose: "",
+    appearance: "",
+    colour: "",
+    consistency: "",
+    mucus: "",
+    amorphous: "",
+    epithelial_cells: "",
+    pus_cells: "",
+    yeast_cells: "",
+    casts: "",
   };
-  const [bloodSlideForm, setBloodSlideForm] = useState({
-    ...defaultBloodSlide,
+  const defaultStool = {
+    appearance: "",
+    colour: "",
+    consistency: "",
+    blood: "",
+    mucus: "",
+  };
+  const defaultElectrolytes = {
+    na: "",
+    k: "",
+    cl: "",
+  };
+  const [labCategoricalOptions] = useState<Record<string, string[]>>({
+    "Blood Slide": ["No mps seen", "mps seen"],
+    "Widal Typhoid IgG": ["Negative", "IgG / IgM positive", "IgM positive"],
+    "H. pylori Ab": ["Negative", "Positive"],
+    HCT: ["Negative", "Positive"],
+    "RPR / VDRL": ["Negative", "Positive"],
+    HBsAg: ["Negative", "Positive"],
+    BAT: ["Non-reactive", "Reactive"],
+    "H. pylori Ag": ["Negative", "Positive"],
+    "HCG Urine": ["Negative", "Positive"],
+    "HCG Serum": ["Negative", "Positive"],
+    MRDT: ["Negative", "Positive"],
+    "Blood Group": [
+      "A Rh+",
+      "A Rh-",
+      "B Rh+",
+      "B Rh-",
+      "AB Rh+",
+      "AB Rh-",
+      "O Rh+",
+      "O Rh-",
+    ],
+    "Rheumatoid Factor": ["Reactive", "Non-reactive"],
   });
+  const [urinalysisForm, setUrinalysisForm] = useState(defaultUrinalysis);
+  const [stoolForm, setStoolForm] = useState(defaultStool);
+  const [electrolytesForm, setElectrolytesForm] =
+    useState(defaultElectrolytes);
   const [labTestDrafts, setLabTestDrafts] = useState<
     Record<
       string,
@@ -403,7 +440,9 @@ function App() {
         category?: string;
         numeric?: string;
         results?: string;
-        bloodSlide?: typeof defaultBloodSlide;
+        urinalysis?: typeof defaultUrinalysis;
+        stool?: typeof defaultStool;
+        electrolytes?: typeof defaultElectrolytes;
       }
     >
   >({});
@@ -520,6 +559,7 @@ function App() {
   const [treatmentNoteError, setTreatmentNoteError] = useState<string | null>(
     null
   );
+  const [showTreatmentHistory, setShowTreatmentHistory] = useState(false);
   const [patientForm, setPatientForm] = useState({
     first_name: "",
     last_name: "",
@@ -589,13 +629,10 @@ function App() {
   }, [treatmentReadyPatients, patientDirectoryTab]);
   // Placeholder until treatment plans are sourced; prevents runtime errors when previewing schedules
   const nextTreatmentPlans: TreatmentPlanEntry[] = [];
-  const selectedPatient = useMemo(
-    () =>
-      treatmentReadyPatients.find(
-        (patient) => patient.id === selectedPatientId
-      ) ?? null,
-    [treatmentReadyPatients, selectedPatientId]
-  );
+  const selectedPatient = useMemo(() => {
+    if (!selectedPatientId) return null;
+    return patients.find((patient) => patient.id === selectedPatientId) ?? null;
+  }, [patients, selectedPatientId]);
   useEffect(() => {
     if (
       selectedPatientId &&
@@ -788,16 +825,28 @@ function App() {
         : Array.isArray((raw as any).results)
         ? (raw as any).results
         : [];
-      const entries: LabQueueEntry[] = payload.map((entry: any) => ({
-        id: entry.id,
-        name: entry.full_name || entry.name || "Patient",
-        age: entry.age?.toString?.() || "",
-        sex: entry.sex || "",
-        arrival: entry.arrival_method || "Walk-in",
-        date: entry.admission_date || entry.date || "",
-        symptoms: entry.symptoms || "",
-        status: entry.status || "triage",
-      }));
+      const entries: LabQueueEntry[] = payload.map((entry: any) => {
+        const rawIdentifier =
+          entry.patient_identifier ||
+          entry.patient_id ||
+          entry.patient ||
+          entry.patientID;
+        const derivedIdentifier =
+          typeof rawIdentifier === "number"
+            ? `PMA${String(rawIdentifier).padStart(4, "0")}`
+            : rawIdentifier || null;
+        return {
+          id: entry.id,
+          name: entry.full_name || entry.name || "Patient",
+          age: entry.age?.toString?.() || "",
+          sex: entry.sex || "",
+          arrival: entry.arrival_method || "Walk-in",
+          date: entry.admission_date || entry.date || "",
+          symptoms: entry.symptoms || "",
+          status: entry.status || "triage",
+          patient_identifier: derivedIdentifier,
+        };
+      });
       setLabQueue(entries);
       setLabFetchError(null);
     } catch (err) {
@@ -878,6 +927,7 @@ function App() {
           ordered_by: order.ordered_by ?? null,
           patient_id: order.patient_id ?? null,
           patient_name: order.patient_name ?? "Patient",
+          patient_identifier: order.patient_identifier ?? null,
           status: order.status,
           priority: order.priority,
           order_items: order.order_items || [],
@@ -894,6 +944,45 @@ function App() {
       setLabFetchError(
         err instanceof Error ? err.message : "Unable to load lab orders"
       );
+    }
+  }, [token]);
+
+  const loadLabTasks = useCallback(async () => {
+    if (!token) {
+      setLabTasks([]);
+      return;
+    }
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/consultation/tasks/?status=open&target_role=lab`,
+        {
+          headers: { Authorization: `Token ${token}` },
+        }
+      );
+      if (!response.ok) {
+        throw new Error("Unable to load lab tasks");
+      }
+      const raw = (await response.json()) as unknown;
+      const payload = Array.isArray(raw)
+        ? raw
+        : Array.isArray((raw as any).results)
+        ? (raw as any).results
+        : [];
+      setLabTasks(
+        payload.map((task: any) => ({
+          id: task.id,
+          admission: task.admission,
+          lab_order: task.lab_order ?? null,
+          task_type: task.task_type,
+          target_role: task.target_role || "",
+          status: task.status,
+          message: task.message || "",
+          created_at: task.created_at,
+        }))
+      );
+    } catch (err) {
+      console.error(err);
+      setLabTasks([]);
     }
   }, [token]);
 
@@ -923,7 +1012,7 @@ function App() {
 
   useEffect(() => {
     setPatientTab("Summary");
-    setShowClinicalForm(false);
+    setShowTreatmentHistory(false);
   }, [selectedPatientId]);
 
   useEffect(() => {
@@ -948,11 +1037,13 @@ function App() {
     if (!token) {
       setLabQueue([]);
       setLabRecords([]);
+      setLabTasks([]);
       return;
     }
     loadLabQueue();
     loadLabRecords();
-  }, [token, loadLabQueue, loadLabRecords]);
+    loadLabTasks();
+  }, [token, loadLabQueue, loadLabRecords, loadLabTasks]);
 
   useEffect(() => {
     if (!token) {
@@ -965,7 +1056,8 @@ function App() {
     } else {
       loadLabOrders();
     }
-  }, [labActiveTab, token, loadLabQueue, loadLabRecords, loadLabOrders]);
+    loadLabTasks();
+  }, [labActiveTab, token, loadLabQueue, loadLabRecords, loadLabOrders, loadLabTasks]);
 
   useEffect(() => {
     if (!token) {
@@ -978,17 +1070,22 @@ function App() {
       loadLabQueue();
       loadLabRecords();
       loadLabOrders();
+      loadLabTasks();
     }
-  }, [activeModule, token, loadTriagePatients, loadLabQueue, loadLabRecords, loadLabOrders]);
+  }, [activeModule, token, loadTriagePatients, loadLabQueue, loadLabRecords, loadLabOrders, loadLabTasks]);
 
   useEffect(() => {
     if (!token || !selectedPatient) {
       setCarePlans([]);
+      setPatientEvents([]);
+      setPatientLabResults([]);
       return;
     }
     const latest = getLatestAdmission(selectedPatient);
     if (!latest) {
       setCarePlans([]);
+      setPatientEvents([]);
+      setPatientLabResults([]);
       return;
     }
     const loadPlans = async () => {
@@ -1012,7 +1109,65 @@ function App() {
         setCarePlans([]);
       }
     };
+    const loadEvents = async () => {
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/consultation/events/?admission=${latest.id}`,
+          { headers: { Authorization: `Token ${token}` } }
+        );
+        if (!response.ok) {
+          throw new Error("Unable to load consultation events");
+        }
+        const raw = (await response.json()) as any;
+        const payload = Array.isArray(raw)
+          ? raw
+          : Array.isArray(raw.results)
+          ? raw.results
+          : [];
+        setPatientEvents(payload);
+      } catch (error) {
+        console.error(error);
+        setPatientEvents([]);
+      }
+    };
+    const loadLabResults = async () => {
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/lab-results/?admission=${latest.id}`,
+          { headers: { Authorization: `Token ${token}` } }
+        );
+        if (!response.ok) {
+          throw new Error("Unable to load lab results");
+        }
+        const raw = (await response.json()) as any;
+        const payload = Array.isArray(raw)
+          ? raw
+          : Array.isArray(raw.results)
+          ? raw.results
+          : [];
+      setPatientLabResults(
+        payload.map((result: any) => ({
+          id: result.id,
+          admission: result.admission,
+          patient: result.patient,
+          patient_identifier: result.patient_identifier ?? null,
+          patient_name: result.patient_name ?? null,
+          test_type: result.test_type,
+          summary: result.summary,
+          recorded_at: result.recorded_at,
+          recorded_by_name: result.recorded_by_name,
+          recorded_by_role: result.recorded_by_role,
+          status: result.status,
+        }))
+      );
+      } catch (error) {
+        console.error(error);
+        setPatientLabResults([]);
+      }
+    };
     void loadPlans();
+    void loadEvents();
+    void loadLabResults();
   }, [selectedPatient, token]);
 
   useEffect(() => {
@@ -1119,7 +1274,6 @@ function App() {
   const moduleAccessSet = useMemo(() => {
     const set = new Set<ModuleKey>(user?.modules ?? []);
     if (set.has("patients") || set.has("laboratory")) {
-      set.add("care-bridge");
     }
     return set;
   }, [user]);
@@ -1259,12 +1413,11 @@ function App() {
     }
 
     const weightValue = form.weight.trim();
-    const weightNumber = Number(weightValue);
-    if (!weightValue) {
-      return "Weight is required.";
-    }
-    if (Number.isNaN(weightNumber) || weightNumber <= 0 || weightNumber > 300) {
-      return "Weight must be a number between 0.1 and 300 kg.";
+    if (weightValue) {
+      const weightNumber = Number(weightValue);
+      if (Number.isNaN(weightNumber) || weightNumber <= 0 || weightNumber > 300) {
+        return "Weight must be a number between 0.1 and 300 kg.";
+      }
     }
 
     const phone = form.phone.trim();
@@ -1299,9 +1452,8 @@ function App() {
 
     const admissionDate = form.admissionDate.trim();
     if (admissionDate) {
-      const date = new Date(admissionDate);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      const date = new Date(`${admissionDate}T00:00:00`);
+      const today = new Date(`${getLocalISODate()}T00:00:00`);
       if (Number.isNaN(date.getTime())) {
         return "Admission date is invalid.";
       }
@@ -1331,8 +1483,7 @@ function App() {
       const parsed = Number(trimmed);
       return Number.isNaN(parsed) ? null : parsed;
     };
-    const admissionDate =
-      triageForm.admissionDate || new Date().toISOString().split("T")[0];
+    const admissionDate = triageForm.admissionDate || getLocalISODate();
     const basePatient = {
       full_name: triageForm.fullName.trim(),
       age: toNumber(triageForm.age) ?? 0,
@@ -1623,9 +1774,11 @@ function App() {
       setLabTestDrafts({});
       setLabCategory("");
       setLabNumeric("");
-      setBloodSlideForm({ ...defaultBloodSlide });
+      setUrinalysisForm(defaultUrinalysis);
+      setStoolForm(defaultStool);
+      setElectrolytesForm(defaultElectrolytes);
     },
-    [defaultBloodSlide]
+    [defaultElectrolytes, defaultStool, defaultUrinalysis]
   );
 
   const loadDraftForTest = useCallback(
@@ -1638,12 +1791,12 @@ function App() {
         testType: test,
         results: draft.results ?? "",
       }));
-      if (test === "Blood Slide") {
-        setBloodSlideForm(draft.bloodSlide ?? { ...defaultBloodSlide });
-      }
+      setUrinalysisForm(draft.urinalysis ?? defaultUrinalysis);
+      setStoolForm(draft.stool ?? defaultStool);
+      setElectrolytesForm(draft.electrolytes ?? defaultElectrolytes);
       setLabError(null);
     },
-    [labTestDrafts, defaultBloodSlide]
+    [labTestDrafts, defaultElectrolytes, defaultStool, defaultUrinalysis]
   );
 
   const persistDraftForCurrentTest = useCallback(
@@ -1652,7 +1805,9 @@ function App() {
         category: string;
         numeric: string;
         results: string;
-        bloodSlide: typeof defaultBloodSlide;
+        urinalysis: typeof defaultUrinalysis;
+        stool: typeof defaultStool;
+        electrolytes: typeof defaultElectrolytes;
       }>
     ) => {
       const test = labResultForm.testType;
@@ -1677,60 +1832,10 @@ function App() {
         fieldErrors: {} as Record<string, string>,
       };
     }
-    const fieldErrors: Record<string, string> = {};
-    if (labResultForm.testType === "Blood Slide") {
-      if (!bloodSlideForm.result) {
-        fieldErrors.outcome = "Outcome is required.";
-      }
-      if (
-        bloodSlideForm.result &&
-        bloodSlideForm.result !== "Negative" &&
-        !bloodSlideForm.parasitemia
-      ) {
-        fieldErrors.parasitemia = "Parasitemia level is required.";
-      }
-      if (
-        bloodSlideForm.result === "Positive (Species Identified)" &&
-        !bloodSlideForm.species
-      ) {
-        fieldErrors.species = "Species is required.";
-      }
-      if (bloodSlideForm.result === "Positive – Mixed") {
-        const selected = Object.values(bloodSlideForm.speciesMixed).filter(
-          Boolean
-        );
-        if (selected.length === 0) {
-          fieldErrors.speciesMixed = "Select at least one species.";
-        }
-      }
-      const hasError = Object.keys(fieldErrors).length > 0;
-      return {
-        message: hasError ? "Complete all required blood slide fields." : null,
-        fieldErrors,
-      };
-    }
-    const categoricalTests = new Set([
-      "MRST",
-      "H. Pylori Antibody",
-      "Blood Grouping (ABO + Rh)",
-      "Typhoid Test",
-      "HCT (Hematocrit)",
-      "VDRL / RPR",
-      "HCG (Urine)",
-      "HCG (Serum)",
-    ]);
-    if (categoricalTests.has(labResultForm.testType) && !labCategory) {
-      fieldErrors.category = "Result is required.";
-    }
-    if (labResultForm.testType === "RBS (Random Blood Sugar)" && !labNumeric) {
-      fieldErrors.numeric = "Enter the glucose value.";
-    }
-    const hasError = Object.keys(fieldErrors).length > 0;
-    return {
-      message: hasError ? "Complete all required fields." : null,
-      fieldErrors,
-    };
-  }, [labResultForm.testType, bloodSlideForm, labCategory, labNumeric]);
+    return { message: null, fieldErrors: {} as Record<string, string> };
+  }, [
+    labResultForm.testType,
+  ]);
 
   const handleLabResultSubmit = useCallback(async () => {
     if (!token) {
@@ -1746,120 +1851,73 @@ function App() {
       setLabError(validationMessage);
       return;
     }
-    // Blood Slide validation and derived summary
+    const testType = labResultForm.testType;
     let derivedSummary = labResultForm.summary;
     let derivedPayload: Record<string, unknown> = {};
-    if (labResultForm.testType === "Blood Slide") {
-      const result = bloodSlideForm.result;
-      if (!result) {
-        setLabError("Select a blood slide result.");
-        return;
+    const categoricalTests = new Set(Object.keys(labCategoricalOptions));
+    if (categoricalTests.has(testType) && labCategory) {
+      derivedSummary = labCategory;
+      derivedPayload = { category: labCategory };
+    } else if (testType === "RBS / FBS" && labNumeric) {
+      const value = Number(labNumeric);
+      let band = "Normal";
+      if (value < 3.5) {
+        band = "Low";
+      } else if (value > 7.5) {
+        band = "High";
       }
-      if (result !== "Negative" && !bloodSlideForm.parasitemia) {
-        setLabError("Parasitemia level is required for positive results.");
-        return;
-      }
-      if (
-        result === "Positive (Species Identified)" &&
-        !bloodSlideForm.species
-      ) {
-        setLabError("Select species for identified positives.");
-        return;
-      }
-      if (result === "Positive – Mixed") {
-        const selected = Object.entries(bloodSlideForm.speciesMixed)
-          .filter(([, checked]) => checked)
-          .map(([key]) => key);
-        if (selected.length === 0) {
-          setLabError("Select at least one species for mixed infections.");
-          return;
-        }
-      }
-      const mixedList = Object.entries(bloodSlideForm.speciesMixed)
-        .filter(([, checked]) => checked)
-        .map(([key]) =>
-          key === "falciparum"
-            ? "P. falciparum"
-            : key === "vivax"
-            ? "P. vivax"
-            : key === "malariae"
-            ? "P. malariae"
-            : "P. ovale"
+      derivedSummary = `RBS/FBS ${value} mmol/L · ${band}`;
+      derivedPayload = { value, band };
+    } else if (testType === "Electrolytes") {
+      const filled = Object.entries(electrolytesForm).filter(
+        ([, v]) => String(v ?? "").trim() !== ""
+      );
+      if (filled.length) {
+        derivedSummary = filled
+          .map(([k, v]) => `${k.toUpperCase()} ${v}`)
+          .join(" | ");
+        derivedPayload = filled.reduce(
+          (acc, [k, v]) => ({ ...acc, [k]: v }),
+          {}
         );
-      derivedPayload = {
-        result_type: result,
-        species: bloodSlideForm.species,
-        species_mixed: mixedList,
-        parasitemia: bloodSlideForm.parasitemia,
-      };
-      if (result === "Negative") {
-        derivedSummary = "Negative for malaria parasites.";
-      } else if (result === "Positive (Species Identified)") {
-        derivedSummary = `${bloodSlideForm.species} positive · ${bloodSlideForm.parasitemia}`;
-      } else if (result === "Positive (Species Not Identified)") {
-        derivedSummary = `Positive (species not identified) · ${bloodSlideForm.parasitemia}`;
-      } else {
-        derivedSummary = `Mixed species (${mixedList.join(", ")}) · ${
-          bloodSlideForm.parasitemia
-        }`;
+      }
+    } else if (testType === "Urinalysis") {
+      const filled = Object.entries(urinalysisForm).filter(
+        ([, v]) => String(v ?? "").trim() !== ""
+      );
+      if (filled.length) {
+        derivedSummary = "Urinalysis recorded";
+        derivedPayload = filled.reduce(
+          (acc, [k, v]) => ({ ...acc, [k]: v }),
+          {}
+        );
+      }
+    } else if (testType === "Stool Analysis") {
+      const filled = Object.entries(stoolForm).filter(
+        ([, v]) => String(v ?? "").trim() !== ""
+      );
+      if (filled.length) {
+        derivedSummary = "Stool analysis recorded";
+        derivedPayload = filled.reduce(
+          (acc, [k, v]) => ({ ...acc, [k]: v }),
+          {}
+        );
       }
     } else {
-      // Other tests: enforce category/value when defined
-      const categoricalTests = new Set([
-        "MRST",
-        "H. Pylori Antibody",
-        "Blood Grouping (ABO + Rh)",
-        "Typhoid Test",
-        "HCT (Hematocrit)",
-        "VDRL / RPR",
-        "HCG (Urine)",
-        "HCG (Serum)",
-      ]);
-      if (categoricalTests.has(labResultForm.testType) && !labCategory) {
-        setLabError("Select a result category for this test.");
-        return;
-      }
-      if (
-        labResultForm.testType === "RBS (Random Blood Sugar)" &&
-        !labNumeric
-      ) {
-        setLabError("Enter the glucose value for RBS.");
-        return;
-      }
-      derivedPayload = {
-        category: labCategory,
-        numeric_value: labNumeric,
-      };
-      if (labResultForm.testType === "RBS (Random Blood Sugar)" && labNumeric) {
-        const value = Number(labNumeric);
-        if (!Number.isNaN(value)) {
-          let band = "Normal";
-          if (value < 3.5) {
-            band = "Low";
-          } else if (value > 7.5) {
-            band = "High";
-          }
-          derivedSummary = `RBS ${value} mmol/L · ${band}`;
-          derivedPayload = { ...derivedPayload, band };
-        }
-      } else {
-        derivedSummary =
-          labCategory ||
-          labResultForm.summary ||
-          labResultForm.results ||
-          labResultForm.testType;
-      }
+      derivedSummary =
+        labCategory ||
+        labResultForm.summary ||
+        labResultForm.results ||
+        testType;
     }
-    const recordedAtIso = labResultForm.recordedAt
-      ? new Date(labResultForm.recordedAt).toISOString()
-      : new Date().toISOString();
+    const recordedAtIso = new Date().toISOString();
     const payload = {
       triage_entry: labResultForm.triageEntryId,
-      test_type: labResultForm.testType,
+      test_type: testType,
       summary: derivedSummary || labResultForm.summary || labResultForm.results,
       payload: {
         ...(derivedPayload || {}),
-        results: labResultForm.results,
+        results: labResultForm.results || undefined,
       },
       recorded_at: recordedAtIso,
     };
@@ -1882,22 +1940,39 @@ function App() {
       }
       const created = (await response.json()) as LabRecordEntry;
       setLabRecords((prev) => [created, ...prev]);
-      setLabQueue((prev) =>
-        prev.filter((entry) => entry.id !== labResultForm.triageEntryId)
-      );
+      // Keep the patient in queue to allow recording multiple test results
+      setLabQueue((prev) => prev);
+      setLabCompletedTests((prev) => {
+        const next = { ...prev };
+        const id = labResultForm.triageEntryId ?? -1;
+        const set = new Set(next[id] ?? []);
+        set.add(labResultForm.testType);
+        next[id] = set;
+        return next;
+      });
       // Refresh persisted lists so triage and lab history stay in sync
       loadLabRecords();
       loadTriagePatients();
-      setLabModalOpen(false);
-      setLabResultForm({
-        triageEntryId: null,
-        testType: "",
-        summary: "",
-        results: "",
-        recordedAt: "",
+      setLabTestDrafts((prev) => {
+        const next = { ...prev };
+        delete next[testType];
+        return next;
       });
+      setLabResultForm((prev) => ({
+        ...prev,
+        testType: "",
+        results: "",
+        recordedAt: new Date().toISOString(),
+      }));
+      setLabCategory("");
+      setLabNumeric("");
+      setUrinalysisForm(defaultUrinalysis);
+      setStoolForm(defaultStool);
+      setElectrolytesForm(defaultElectrolytes);
       setLabError(null);
       setLabActiveTab("records");
+      // Refresh patients to reflect lab completion in the patient queue
+      loadPatients(searchTerm);
     } catch (err) {
       setLabError(
         err instanceof Error ? err.message : "Unable to save lab result"
@@ -1908,11 +1983,16 @@ function App() {
     labResultForm,
     labCategory,
     labNumeric,
-    bloodSlideForm,
     token,
     loadLabRecords,
     loadTriagePatients,
     validateLabForm,
+    urinalysisForm,
+    stoolForm,
+    electrolytesForm,
+    labCategoricalOptions,
+    loadPatients,
+    searchTerm,
   ]);
 
   useEffect(() => {
@@ -1964,144 +2044,112 @@ function App() {
     }
   };
 
-  const renderLogin = () => (
-    <div className="grid min-h-screen grid-cols-1 bg-[#0F172A] text-slate-50 lg:grid-cols-2">
-      <div className="relative overflow-hidden bg-gradient-to-br from-[#0B1936] via-[#0F2A4D] to-[#0B1936] px-8 py-10 lg:px-12">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(59,130,246,0.18),transparent_35%),radial-gradient(circle_at_80%_0%,rgba(16,185,129,0.22),transparent_30%),radial-gradient(circle_at_50%_60%,rgba(14,165,233,0.16),transparent_35%)]" />
-        <div className="relative flex h-full flex-col justify-between gap-10">
+const renderLogin = () => (
+    <div className="relative flex min-h-screen items-center justify-center bg-slate-100 px-4">
+      <div className="w-full max-w-xl rounded-3xl border border-slate-200 bg-white/95 p-10 shadow-[0_30px_80px_rgba(15,23,42,0.12)] backdrop-blur">
+        <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 text-xl font-semibold text-white">
-              V
-            </div>
+            <img
+              src="/paleologo.png"
+              alt="Paleo"
+              className="h-12 w-12 rounded-2xl bg-white/70 p-1 object-contain shadow-sm"
+            />
             <div>
-              <p className="text-sm uppercase tracking-[0.2em] text-sky-200/80">Secure Hospital Access</p>
-              <p className="text-xl font-semibold text-white">Vytal Command</p>
+              <p className="calibri font-semibold uppercase tracking-[0.2em] text-[#008000]">
+                Paleo Medicals
+              </p>
+              <p className="text-xs text-slate-500 text-[#5c0099]">Doctor to Community</p>
             </div>
           </div>
-          <div className="space-y-5">
-            <p className="text-xs uppercase tracking-[0.25em] text-sky-200/70">Enterprise clinical cloud</p>
-            <h1 className="text-4xl font-semibold leading-tight text-white lg:text-5xl">
-              Coordinate triage, lab, and treatment with confidence.
-            </h1>
-            <p className="max-w-xl text-base text-slate-200/90">
-              Encrypted access for authorised clinicians, nurses, and laboratory leads. Audit-ready sign in with regional failover and 24/7 monitoring.
-            </p>
-            <div className="grid gap-3 text-sm text-slate-200">
-              <div className="flex items-center gap-3">
-                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-lg font-bold text-sky-200">01</span>
-                <div>
-                  <p className="font-semibold text-white">Zero-trust perimeter</p>
-                  <p className="text-slate-200/80">MFA-ready, token-based sessions with continuous validation.</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-lg font-bold text-emerald-200">02</span>
-                <div>
-                  <p className="font-semibold text-white">Clinical uptime</p>
-                  <p className="text-slate-200/80">Redundant endpoints to keep triage, lab, and bedside workflows online.</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-lg font-bold text-amber-200">03</span>
-                <div>
-                  <p className="font-semibold text-white">Data governance</p>
-                  <p className="text-slate-200/80">Audited access, immutable clinical notes, and least-privilege roles.</p>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4 text-sm text-slate-200/80">
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <p className="text-xs uppercase tracking-wide text-slate-300/80">Facilities online</p>
-              <p className="mt-1 text-2xl font-semibold text-white">48</p>
-              <p>Across acute, outpatient, and diagnostic centers.</p>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <p className="text-xs uppercase tracking-wide text-slate-300/80">Protected sessions</p>
-              <p className="mt-1 text-2xl font-semibold text-white">99.99%</p>
-              <p>Uptime SLA with layered observability.</p>
-            </div>
+          <div className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 shadow-inner">
+            Secure Access
           </div>
         </div>
-      </div>
 
-      <div className="flex items-center justify-center bg-slate-50 px-4 py-10">
-        <div className="w-full max-w-xl rounded-[28px] border border-slate-200 bg-white p-10 shadow-[0_30px_80px_rgba(15,23,42,0.08)]">
-          <div className="mb-6 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Restricted area</p>
-              <h2 className="text-2xl font-semibold text-slate-900">Staff sign in</h2>
-              <p className="text-sm text-slate-500">Use your issued credentials. Contact ops for access.</p>
-            </div>
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-900 text-lg font-semibold text-white">
-              V
+        <div className="mb-5 flex items-center justify-between rounded-full bg-slate-100 p-1 text-sm font-semibold text-slate-500">
+          <div className="flex flex-1 items-center justify-center rounded-full bg-white px-4 py-2 text-slate-900 shadow-sm">
+            Sign in
+          </div>
+          <div className="flex flex-1 items-center justify-center px-4 py-2">
+            Register
+          </div>
+        </div>
+
+        <div className="mb-6 space-y-1">
+          <h3 className="text-2xl font-semibold text-slate-900 text-[#330066]">Welcome back</h3>
+          <p className="text-sm text-slate-500">
+            Please enter your credentials to access the workspace.
+          </p>
+        </div>
+
+        {loginError && (
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {loginError}
+          </div>
+        )}
+
+        <form className="space-y-5" onSubmit={handleLoginSubmit}>
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-slate-700">Username</label>
+            <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100">
+              <input
+                className="w-full bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
+                value={loginForm.username}
+                onChange={(event) =>
+                  setLoginForm((prev) => ({
+                    ...prev,
+                    username: event.target.value,
+                  }))
+                }
+                placeholder="Enter you username"
+                required
+              />
             </div>
           </div>
 
-          {loginError && (
-            <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {loginError}
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-slate-700">Password</label>
+            <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100">
+              <input
+                type="password"
+                className="w-full bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
+                value={loginForm.password}
+                onChange={(event) =>
+                  setLoginForm((prev) => ({
+                    ...prev,
+                    password: event.target.value,
+                  }))
+                }
+                placeholder="Enter your password"
+                required
+              />
+              <button
+                type="button"
+                className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+              >
+                Forgot?
+              </button>
             </div>
-          )}
+          </div>
 
-          <form className="space-y-5" onSubmit={handleLoginSubmit}>
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-slate-700">Username</label>
-              <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 focus-within:border-slate-400">
-                <span className="text-slate-400">ID</span>
-                <input
-                  className="w-full bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
-                  value={loginForm.username}
-                  onChange={(event) =>
-                    setLoginForm((prev) => ({
-                      ...prev,
-                      username: event.target.value,
-                    }))
-                  }
-                  placeholder="clinic.user or email"
-                  required
-                />
-              </div>
-            </div>
+          <div className="flex items-center justify-between text-xs text-slate-500">
+            <label className="flex cursor-pointer items-center gap-2">
+              <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-blue-600" />
+              Remember me
+            </label>
+          </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-slate-700">Password</label>
-              <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 focus-within:border-slate-400">
-                <span className="text-slate-400">PW</span>
-                <input
-                  type="password"
-                  className="w-full bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
-                  value={loginForm.password}
-                  onChange={(event) =>
-                    setLoginForm((prev) => ({
-                      ...prev,
-                      password: event.target.value,
-                    }))
-                  }
-                  placeholder="Enter your password"
-                  required
-                />
-                <button
-                  type="button"
-                  className="text-xs font-semibold text-slate-500 hover:text-slate-700"
-                >
-                  Forgot?
-                </button>
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={loginSubmitting}
-            >
-              {loginSubmitting ? "Signing in..." : "Enter workspace"}
-            </button>
-            <p className="text-center text-xs text-slate-500">
-              Helpdesk: ops@vytal.local | Always-on SOC monitoring
-            </p>
-          </form>
-        </div>
+          <button
+            type="submit"
+            className="w-full rounded-2xl bg-[#008000] px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-[#006600] disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={loginSubmitting}
+          >
+            {loginSubmitting ? "Signing in..." : "Enter workspace"}
+          </button>
+          <p className="text-center text-xs text-slate-500">
+            By signing in, you agree to the Terms of Service and Data Processing Agreement.  Contact System Administrator for Support.
+          </p>
+        </form>
       </div>
     </div>
   );
@@ -2119,9 +2167,11 @@ function App() {
           sidebarCollapsed ? "justify-center" : "gap-3"
         }`}
       >
-        <div className="rounded-lg bg-[#1D4ED8]/30 px-4 py-2 text-lg font-semibold text-white">
-          V
-        </div>
+        <img
+          src="/vytallogo.png"
+          alt="Vytal"
+          className="h-10 w-10 rounded-md object-contain"
+        />
         {!sidebarCollapsed && (
           <div>
             <p className="text-sm font-semibold text-white">Vytal</p>
@@ -2156,7 +2206,7 @@ function App() {
                       onClick={() => setActiveModule(item.key)}
                     >
                       {isActive && (
-                        <span className="absolute left-2 top-2 bottom-2 w-1 rounded-full bg-[#2563EB]" />
+                        <span className="absolute left-2 top-2 bottom-2 w-1 rounded-full bg-[#008000]" />
                       )}
                       <Icon active={isActive} />
                       {!sidebarCollapsed && (
@@ -2182,133 +2232,20 @@ function App() {
     "Clinician"
   ).trim();
 
-  const renderPatientHeader = () => (
-    <header className="border-b border-[#E5E7EB] bg-white">
-      <div className="mx-auto flex max-w-screen-2xl flex-col gap-4 px-6 py-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#9CA3AF]">
-              Patient Management
-            </p>
-            <h1 className="mt-1 text-2xl font-semibold text-[#111827]">
-              Clinical workspace
-            </h1>
-            <p className="text-sm text-[#6B7280]">
-              Review the queue, patient details, and clinical history without losing context.
-            </p>
-          </div>
-          <div className="flex items-center gap-3 text-sm">
-            <button
-              onClick={() => setSidebarCollapsed((prev) => !prev)}
-              className="hidden rounded-full border border-[#E5E7EB] p-2 text-[#4B5563] hover:text-[#111827] sm:inline-flex"
-              title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-              type="button"
-            >
-              {sidebarCollapsed ? "?" : "?"}
-            </button>
-            <button
-              onClick={handleLogout}
-              className="rounded-full border border-[#E5E7EB] px-4 py-2 text-sm font-semibold text-[#111827] hover:bg-[#F3F4F6]"
-              type="button"
-            >
-              Logout
-            </button>
-            <div className="flex items-center gap-2 rounded-full border border-[#E5E7EB] px-3 py-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#111827] text-sm font-semibold text-white">
-                {userInitials || "??"}
-              </div>
-              <div className="hidden sm:block">
-                <p className="text-sm font-semibold text-[#111827]">
-                  {user
-                    ? `${user.first_name} ${user.last_name}`.trim()
-                    : "Clinician"}
-                </p>
-                <p className="text-xs text-[#4B5563]">{user?.username}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="inline-flex rounded-full border border-[#E5E7EB] bg-[#F9FAFB] p-1 text-xs font-semibold text-[#4B5563] shadow-sm">
-            {PATIENT_SUB_PAGES.map((sub) => (
-              <button
-                key={sub}
-                onClick={() => setPatientSubPage(sub)}
-                className={`rounded-full px-4 py-1 transition ${
-                  patientSubPage === sub ? "bg-white text-[#111827] shadow-subtle" : "hover:bg-white/60"
-                }`}
-                type="button"
-              >
-                {sub}
-              </button>
-            ))}
-          </div>
-          <div className="flex max-w-xl flex-1 items-center gap-3">
-            <div className="relative w-full">
-              <input
-                className="w-full rounded-full border border-[#E5E7EB] bg-white px-3 py-2 pl-9 text-sm text-[#111827] shadow-inner placeholder-[#9CA3AF] focus:border-[#2563EB] focus:outline-none focus:ring-2 focus:ring-[#DBEAFE]"
-                placeholder="Search patients, admissions, or identifiers"
-                value={searchTerm}
-                onChange={(event) => {
-                  setSearchTerm(event.target.value);
-                  setPatientDirectoryPage(1);
-                }}
-              />
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#9CA3AF]">
-                <svg
-                  className="h-4 w-4"
-                  viewBox="0 0 20 20"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                >
-                  <circle cx="9" cy="9" r="5" />
-                  <path d="M13.5 13.5 17 17" />
-                </svg>
-              </span>
-            </div>
-            <button
-              onClick={() => setSidebarCollapsed((prev) => !prev)}
-              className="inline-flex items-center rounded-full border border-[#E5E7EB] px-3 py-2 text-xs font-semibold text-[#4B5563] hover:bg-[#F3F4F6] sm:hidden"
-              title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-              type="button"
-            >
-              {sidebarCollapsed ? "?" : "?"}
-            </button>
-          </div>
-        </div>
-      </div>
-    </header>
-  );
   const renderGenericHeader = () => (
     <header className="border-b border-[#E5E7EB] bg-white">
       <div className="mx-auto flex max-w-screen-2xl items-center justify-between gap-4 px-6 py-4">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-[#9CA3AF]">
-            Active Module
+        <div className="flex items-center gap-2">
+          <img
+            src="/paleologo.png"
+            alt="Paleo Medicals"
+            className="h-8 w-8 rounded-md object-contain"
+          />
+          <p className="calibri font-semibold uppercase tracking-[0.2em] text-[#008000]">
+            Paleo Medicals
           </p>
-          <h1 className="text-lg font-semibold text-[#111827]">
-            {MODULE_LABELS[activeModule] ?? "Workspace"}
-          </h1>
         </div>
         <div className="flex flex-1 flex-wrap items-center justify-end gap-3 text-sm">
-          <button
-            onClick={() => setSidebarCollapsed((prev) => !prev)}
-            className="rounded-full border border-[#E5E7EB] p-2 text-[#4B5563] hover:text-[#111827]"
-            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-          >
-            {sidebarCollapsed ? "⤵" : "⤴"}
-          </button>
-          <div className="flex max-w-md flex-1 items-center gap-2 rounded-full border border-[#E5E7EB] bg-[#F9FAFB] px-4 py-2">
-            <input
-              className="flex-1 bg-transparent text-sm text-[#111827] placeholder-[#9CA3AF] focus:outline-none"
-              placeholder="Search the workspace…"
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-            />
-            <span className="text-xs text-[#9CA3AF]">⌘K</span>
-          </div>
           <button
             onClick={handleLogout}
             className="rounded-full border border-[#E5E7EB] px-4 py-2 text-sm font-semibold text-[#111827] hover:bg-[#F3F4F6]"
@@ -2316,25 +2253,24 @@ function App() {
             Logout
           </button>
           <div className="flex items-center gap-2 rounded-full border border-[#E5E7EB] px-3 py-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#111827] text-sm font-semibold text-white">
-              {userInitials}
-            </div>
-            {!sidebarCollapsed && (
+            <img
+              src="/profileicon.png"
+              alt="User profile"
+              className="h-9 w-9 rounded-full border border-[#E5E7EB] object-cover"
+            />
               <div>
                 <p className="text-sm font-semibold text-[#111827]">
                   {user?.first_name} {user?.last_name}
                 </p>
                 <p className="text-xs text-[#4B5563]">{user?.username}</p>
               </div>
-            )}
           </div>
         </div>
       </div>
     </header>
   );
 
-  const renderHeader = () =>
-    activeModule === "patients" ? renderPatientHeader() : renderGenericHeader();
+  const renderHeader = () => renderGenericHeader();
 
   const renderPatientDirectory = () => {
     const PAGE_SIZE = 10;
@@ -2367,19 +2303,28 @@ function App() {
       <section className={`${CARD_SECTION_CLASS} space-y-6`}>
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#9CA3AF]">
-              Patient Directory
-            </p>
             <h2 className="text-2xl font-semibold text-[#111827]">
-              Queue & treatment overview
+              Clinicians Worklist
             </h2>
+
             <p className="text-sm text-[#4B5563]">
-              Review triage-cleared patients, active treatments, and discharged cases.
+              Review lab results, record treaments and set Patients review schedules.
             </p>
           </div>
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-            {filteredPatients.length} {filteredPatients.length === 1 ? "patient" : "patients"}
-          </span>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleOpenClinicalForm}
+              disabled={!selectedPatient}
+              className="rounded-full bg-[#008000] px-4 py-2 text-sm font-semibold text-white shadow-subtle transition hover:bg-[#007000] disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500"
+            >
+              Document Care Plan
+            </button>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+              {filteredPatients.length}{" "}
+              {filteredPatients.length === 1 ? "patient" : "patients"}
+            </span>
+          </div>
         </div>
         <div className="flex flex-wrap gap-3 text-sm font-semibold text-gray-500">
           {PATIENT_DIRECTORY_TABS.map((tab) => (
@@ -2389,7 +2334,7 @@ function App() {
               onClick={() => setPatientDirectoryTab(tab)}
               className={`rounded-full px-4 py-2 transition ${
                 patientDirectoryTab === tab
-                  ? "bg-[#2563EB] text-white shadow-subtle"
+                  ? "bg-[#008000] text-white shadow-subtle"
                   : "bg-slate-100 text-slate-600 hover:bg-slate-200"
               }`}
             >
@@ -2404,25 +2349,27 @@ function App() {
           <table className="min-w-full text-left text-sm text-[#4B5563]">
             <thead className="bg-[#F9FAFB] text-xs font-semibold uppercase tracking-wide text-[#6B7280]">
               <tr>
-                <th className="px-4 py-3">Patient ID</th>
-                <th className="px-4 py-3">Patient</th>
-                <th className="px-4 py-3">Age</th>
-                <th className="px-4 py-3">Sex</th>
-                <th className="px-4 py-3">Phone</th>
-                <th className="px-4 py-3">Admission</th>
-                <th className="px-4 py-3">Stage</th>
+                <th className="px-4 py-3 text-[#2e004d]">Patient ID</th>
+                <th className="px-4 py-3 text-[#2e004d]">Patient</th>
+                <th className="px-4 py-3 text-[#2e004d]">Age</th>
+                <th className="px-4 py-3 text-[#2e004d]">Weigh</th>
+                <th className="px-4 py-3 text-[#2e004d]">Sex</th>
+                <th className="px-4 py-3 text-[#2e004d]">Phone</th>
+                <th className="px-4 py-3 text-[#2e004d]">Admission</th>
+                <th className="px-4 py-3 text-[#2e004d]">Next schedule</th>
+                <th className="px-4 py-3 text-[#2e004d]">Stage</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-sm text-[#9CA3AF]">
+                  <td colSpan={8} className="px-4 py-8 text-center text-sm text-[#9CA3AF]">
                     Loading patients?
                   </td>
                 </tr>
               ) : filteredPatients.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-sm text-[#9CA3AF]">
+                  <td colSpan={8} className="px-4 py-8 text-center text-sm text-[#9CA3AF]">
                     {emptyCopy[patientDirectoryTab]}
                   </td>
                 </tr>
@@ -2434,26 +2381,24 @@ function App() {
                   return (
                     <tr
                       key={patient.id}
-                      className={`border-t border-[#E5E7EB] text-sm transition ${
+                      onClick={() => {
+                        setSelectedPatientId(patient.id);
+                        setPatientSubPage("Patient Details");
+                      }}
+                      className={`cursor-pointer border-t border-[#E5E7EB] text-sm transition ${
                         active ? "bg-[#F8FAFF] shadow-inner" : index % 2 === 0 ? "bg-white" : "bg-[#F9FAFB]"
                       } hover:bg-[#EAF2FF]`}
                     >
-                      <td className="px-4 py-3 font-semibold text-[#111827]">
+                      <td className="px-4 py-3 font-medium text-[#111827]">
                         {patient.patient_identifier || "?"}
                       </td>
-                      <td
-                        className="cursor-pointer px-4 py-3 font-medium text-[#111827]"
-                        onClick={() => {
-                          setSelectedPatientId(patient.id);
-                          setPatientSubPage("Patient Details");
-                        }}
-                      >
+                      <td className="px-4 py-3 font-medium text-[#111827]">
+                        <div className="text-xs font-medium text-[#000033]">
                         {patient.first_name} {patient.last_name}
-                        <div className="text-xs text-[#6B7280]">
-                          {patient.emergency_contact_name || "No emergency contact"}
                         </div>
                       </td>
                       <td className="px-4 py-3">{patient.age}</td>
+                      <td className="px-4 py-3">{patient.weight_kg}</td>
                       <td className="px-4 py-3">{patient.gender || "?"}</td>
                       <td className="px-4 py-3">{patient.phone_number || "?"}</td>
                       <td className="px-4 py-3">
@@ -2462,9 +2407,14 @@ function App() {
                           : "Not admitted"}
                       </td>
                       <td className="px-4 py-3">
+                        {latestAdmission?.review_date
+                          ? formatDateTime(latestAdmission.review_date)
+                          : "None"}
+                      </td>
+                      <td className="px-4 py-3">
                         <span
                           className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
-                            stage === "Queue"
+                            stage === "Lab_done"
                               ? "bg-yellow-50 text-yellow-700"
                               : stage === "In Treatment"
                               ? "bg-blue-50 text-blue-700"
@@ -2524,7 +2474,7 @@ function App() {
         )}
         {showTriageHoldMessage && (
           <div className="rounded-2xl border border-[#E5E7EB] bg-white/80 px-4 py-3 text-sm text-[#4B5563]">
-            All registered patients are still completing triage or lab steps. Treatment teams will see them here once both stages are done.
+            Patients that have completed Lab tests appear here.
           </div>
         )}
       </section>
@@ -2605,12 +2555,12 @@ function App() {
         latestAdmission.clinical_notes.length > 0
           ? latestAdmission.clinical_notes[0]
           : null;
-      const labNotes = latestAdmission?.clinical_notes.filter(isLabNote) ?? [];
       const labEntries =
-        labNotes.length > 0
-          ? labNotes.map((note) => ({
-              label: formatDateTime(note.documented_at),
-              value: note.treatment_details || "Result recorded",
+        patientLabResults.length > 0
+          ? patientLabResults.map((result) => ({
+              label: `${result.test_type} · ${formatDateTime(result.recorded_at)}`,
+              value: result.summary || "Result recorded",
+              meta: `${result.recorded_by_name || "Lab"} (${result.recorded_by_role || "Laboratory"})`,
             }))
           : (latestAdmission?.lab_tests_done || "")
               .split(/\n+/)
@@ -2619,6 +2569,7 @@ function App() {
               .map((value, index) => ({
                 label: `Lab ${index + 1}`,
                 value,
+                meta: "",
               }));
       const upcomingPlan = nextReviewPlan;
       return (
@@ -2859,6 +2810,9 @@ function App() {
                       <p className="mt-1 text-sm font-semibold text-slate-900">
                         {entry.value}
                       </p>
+                      {entry.meta && (
+                        <p className="text-[11px] text-slate-500">{entry.meta}</p>
+                      )}
                     </div>
                   ))
                 )}
@@ -2884,6 +2838,22 @@ function App() {
             {carePlans.length} version{carePlans.length === 1 ? "" : "s"}
           </span>
         </div>
+        {carePlans.length > 0 && (
+          <div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-3">
+            <p className="text-[11px] uppercase tracking-wide text-emerald-700">
+              Current treatment order
+            </p>
+            <p className="mt-1 text-sm font-semibold text-emerald-900">
+              v{carePlans[0].version} · {carePlans[0].status}
+            </p>
+            <p className="text-sm text-emerald-800">
+              {carePlans[0].assessment || "Assessment not provided"}
+            </p>
+            {carePlans[0].note && (
+              <p className="text-xs text-emerald-700">Note: {carePlans[0].note}</p>
+            )}
+          </div>
+        )}
         <div className="mt-4 space-y-3">
           {carePlans.length === 0 ? (
             <p className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
@@ -2924,6 +2894,53 @@ function App() {
       </div>
     );
 
+    const renderActivityCard = () => {
+      const events = patientEvents || [];
+      return (
+        <div className={`${CARD_CLASS} bg-white/90`}>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-slate-400">
+                Activity
+              </p>
+              <h3 className="text-lg font-semibold text-slate-900">
+                Audit trail
+              </h3>
+            </div>
+            <span className="text-xs text-slate-500">
+              {events.length} event{events.length === 1 ? "" : "s"}
+            </span>
+          </div>
+          <div className="mt-3 space-y-2">
+            {events.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500">
+                No consultation activity recorded yet.
+              </p>
+            ) : (
+              events.slice(0, 8).map((event) => (
+                <div
+                  key={event.id}
+                  className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3"
+                >
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold text-slate-900">
+                      {event.event_type.replace("_", " ")}
+                    </p>
+                    <span className="text-[11px] text-slate-500">
+                      {formatDateTime(event.occurred_at)}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    {event.actor_name || "System"} · {event.actor_role || "—"}
+                  </p>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      );
+    };
+
     const renderPatientTabContent = () => {
       switch (patientTab) {
         case "Summary":
@@ -2931,8 +2948,7 @@ function App() {
             <div className="space-y-6">
               {renderPatientInformation()}
               {renderCarePlansCard()}
-              {renderNextTreatmentTab()}
-              {renderAppointmentHistoryTab()}
+              {renderActivityCard()}
             </div>
           );
         case "Records":
@@ -2946,108 +2962,20 @@ function App() {
           return null;
       }
     };
-
-    return (
-      <section className={`${CARD_SECTION_CLASS} space-y-6`}>
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#E5EDFF] text-xl font-semibold text-[#2563EB]">
-              {initials || "PT"}
-            </div>
-            <div>
-              <h2 className="text-2xl font-semibold text-[#111827]">
-                {selectedPatient.first_name} {selectedPatient.last_name}
-              </h2>
-              <p className="text-sm text-[#4B5563]">
-                Age {selectedPatient.age} | {selectedPatient.gender || "N/A"} | {selectedPatient.phone_number || "No phone"}
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {nextReviewPlan ? (
-              <div className="flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                <div>
-                  <p className="text-[10px] uppercase tracking-wide text-amber-600">
-                    Next review
-                  </p>
-                  <p className="text-sm font-semibold text-amber-900">
-                    {nextReviewPlan.scheduled_for
-                      ? formatDateTime(nextReviewPlan.scheduled_for)
-                      : "No review"}
-                  </p>
-                </div>
-                {nextReviewPlan.scheduled_for && (
-                  <button
-                    type="button"
-                    disabled={treatmentSubmitting}
-                    onClick={() =>
-                      handleCompleteNextReview(nextReviewPlan.admissionId)
-                    }
-                    className="text-[11px] font-semibold text-amber-800 underline decoration-dashed disabled:opacity-40"
-                  >
-                    Mark complete
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div className="rounded-2xl border border-dashed border-slate-200 px-3 py-2 text-xs font-semibold text-slate-500">
-                No next review scheduled
-              </div>
-            )}
-            <button
-              type="button"
-              onClick={() => {
-                setPatientTab("Records");
-                setShowClinicalForm(true);
-              }}
-              className="rounded-full bg-[#2563EB] px-5 py-2 text-sm font-semibold text-white shadow-subtle hover:bg-[#1D4ED8]"
-              disabled={isDischarged}
-            >
-              {isDischarged ? "Discharged" : "Record Treatment"}
-            </button>
-          </div>
-        </div>
-        {stageCalloutMessage && (
-          <div
-            className={`rounded-2xl border px-4 py-3 text-sm ${stageCalloutStyles[patientStage]}`}
-          >
-            {stageCalloutMessage}
-          </div>
-        )}
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-b border-[#E5E7EB] pb-3 text-sm font-semibold text-[#4B5563]">
-          <div className="flex flex-wrap gap-3">
-            {PATIENT_TABS.map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => setPatientTab(tab)}
-                className={`rounded-full px-4 py-1 transition-colors ${
-                  patientTab === tab
-                    ? "bg-[#2563EB] text-white shadow-subtle"
-                    : "bg-[#E5E7EB] text-[#4B5563] hover:bg-[#e0e2e7]"
-                }`}
-              >
-                {tab}
-              </button>
-            ))}
-          </div>
-          <div className="text-xs uppercase tracking-wide text-[#9CA3AF]">
-            Latest admission ·{" "}
-            <span className="text-[#4B5563]">
-              {selectedPatient.latest_admission_status ?? "Pending"}
-            </span>
-          </div>
-        </div>
-        {renderPatientTabContent()}
-      </section>
-    );
   };
 
   const renderClinicalFormDrawer = () => {
-    if (!showClinicalForm || !selectedPatient) {
+    if (!showClinicalForm) {
       return null;
     }
-    const patientStage = categorizePatientStatus(selectedPatient);
+    const activePatient =
+      selectedPatientId && !selectedPatient
+        ? treatmentReadyPatients.find((p) => p.id === selectedPatientId) ??
+          selectedPatient
+        : selectedPatient;
+    const patientStage = activePatient
+      ? categorizePatientStatus(activePatient)
+      : null;
     const isDischarged = patientStage === "Discharged";
     return (
       <>
@@ -3101,24 +3029,33 @@ function App() {
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="space-y-2">
                   <label className="text-xs font-semibold text-slate-500">
-                    Admission
+                    Patient
                   </label>
                   <select
                     className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-                    value={treatmentNoteForm.admissionId}
-                    onChange={(event) =>
-                      setTreatmentNoteForm((prev) => ({
-                        ...prev,
-                        admissionId: event.target.value,
-                      }))
-                    }
+                    value={selectedPatient?.id ?? selectedPatientId ?? ""}
+                    onChange={(event) => {
+                      const patientId = Number(event.target.value);
+                      const patient = treatmentReadyPatients.find(
+                        (p) => p.id === patientId
+                      );
+                      if (patient) {
+                        setSelectedPatientId(patient.id);
+                        const latestAdmission = getLatestAdmission(patient);
+                        setTreatmentNoteForm((prev) => ({
+                          ...prev,
+                          admissionId: latestAdmission
+                            ? String(latestAdmission.id)
+                            : "",
+                        }));
+                      }
+                    }}
                     required
                   >
-                    <option value="">Select admission</option>
-                    {selectedPatient.admissions.map((admission) => (
-                      <option key={admission.id} value={admission.id}>
-                        {admission.provisional_diagnosis || "Admission"} ·{" "}
-                        {formatDateOnly(admission.admission_date)}
+                    <option value="">Select patient</option>
+                    {treatmentReadyPatients.map((patient) => (
+                      <option key={patient.id} value={patient.id}>
+                        {patient.first_name} {patient.last_name}
                       </option>
                     ))}
                   </select>
@@ -3335,12 +3272,12 @@ function App() {
               <div className="flex flex-wrap gap-3 pt-2">
                 <button
                   type="submit"
-                  className="rounded-full bg-[#2563EB] px-5 py-2 text-sm font-semibold text-white shadow-subtle disabled:opacity-60 hover:bg-[#1D4ED8]"
+                  className="rounded-full bg-[#008000] px-5 py-2 text-sm font-semibold text-white shadow-subtle disabled:opacity-60 hover:bg-[#008000]"
                   disabled={treatmentNoteSubmitting}
                 >
                   {treatmentNoteSubmitting
                     ? "Saving…"
-                    : "Record treatment note"}
+                    : "Save"}
                 </button>
                 <button
                   type="button"
@@ -3354,6 +3291,315 @@ function App() {
           </form>
         </aside>
       </>
+    );
+  };
+
+  const renderPatientInfoDrawer = () => {
+    if (patientSubPage !== "Patient Details" || !selectedPatient) {
+      return null;
+    }
+    const latestAdmission = getLatestAdmission(selectedPatient);
+    const formatValue = (
+      value?: string | number | null,
+      suffix = "",
+      fallback = "Not recorded"
+    ) => {
+      if (value === null || value === undefined || value === "") {
+        return fallback;
+      }
+      const parsed = typeof value === "number" ? value.toString() : value;
+      return suffix ? `${parsed}${suffix}` : parsed;
+    };
+    const triageSymptoms =
+      latestAdmission?.provisional_diagnosis ||
+      latestAdmission?.clinical_notes.find((note) => note.complaints?.trim())
+        ?.complaints ||
+      selectedPatient.notes ||
+      "Not recorded";
+    const triageAllergies =
+      latestAdmission?.allergies ||
+      selectedPatient.allergy_summary ||
+      "Not recorded";
+    const clinicalNotes = Array.isArray(latestAdmission?.clinical_notes)
+      ? latestAdmission?.clinical_notes
+      : [];
+    const triageNote =
+      clinicalNotes.find((note) =>
+        `${note.recorded_by_role || ""}`.toLowerCase().includes("triage")
+      ) ||
+      clinicalNotes.find(
+        (note) =>
+          !`${note.recorded_by_role || ""}`.toLowerCase().includes("lab")
+      ) ||
+      null;
+    const triageRecordedBy = triageNote
+      ? `${triageNote.recorded_by_name || "Unknown"} (${triageNote.recorded_by_role || "Triage"})`
+      : "Not recorded";
+    const triageRecordedAt = triageNote?.documented_at
+      ? formatDateTime(triageNote.documented_at)
+      : latestAdmission?.admission_date
+      ? formatDateTime(latestAdmission.admission_date)
+      : "Not recorded";
+    const labEntries =
+      patientLabResults && patientLabResults.length > 0
+        ? patientLabResults.map((result) => ({
+            id: result.id,
+            label: result.test_type,
+            summary: result.summary || "Result recorded",
+            meta: `${result.recorded_by_name || "Lab"} (${result.recorded_by_role || "Laboratory"}) · ${formatDateTime(result.recorded_at)}`,
+          }))
+        : [];
+    const treatmentNotes = (selectedPatient.admissions ?? [])
+      .flatMap((admission) =>
+        (admission.clinical_notes ?? []).map((note) => ({
+          ...note,
+          admission_id: admission.id,
+        }))
+      )
+      .filter((note) => {
+        const role = (note.recorded_by_role || "").toLowerCase();
+        const isLab = role.includes("lab");
+        const isTriage = role.includes("triage");
+        return (
+          !isLab &&
+          !isTriage &&
+          (note.treatment_details ||
+            note.remarks ||
+            note.complaints ||
+            note.assessment ||
+            note.note)
+        );
+      })
+      .sort(
+        (a, b) =>
+          Date.parse(b.documented_at ?? b.created_at ?? "") -
+          Date.parse(a.documented_at ?? a.created_at ?? "")
+      );
+    const mostRecentTreatmentNotes = treatmentNotes.slice(0, 1);
+
+    return (
+      <aside className="fixed inset-y-0 right-0 z-40 w-full max-w-md overflow-y-auto border-l border-slate-200 bg-white shadow-2xl">
+        <div className="space-y-4 p-5">
+          <header className="flex items-center justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-slate-400">
+                Patient
+              </p>
+              <h2 className="text-lg font-semibold text-slate-900">
+                {selectedPatient.first_name} {selectedPatient.last_name}
+              </h2>
+              <p className="text-xs text-slate-500">
+                ID: {selectedPatient.patient_identifier || "—"}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+              onClick={() => {
+                setPatientSubPage("Patient Directory");
+              }}
+            >
+              Close
+            </button>
+          </header>
+
+          <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex items-center justify-between">
+                <p className="text-xs uppercase tracking-wide text-slate-400">
+                  Triage snapshot
+                </p>
+              </div>
+            <dl className="space-y-2 text-sm text-slate-800">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                    Age
+                  </p>
+                  <p className="font-semibold">
+                    {formatValue(selectedPatient.age, " yrs")}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                    Weight
+                  </p>
+                  <p className="font-semibold">
+                    {formatValue(selectedPatient.weight_kg, " kg")}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                    Temperature
+                  </p>
+                  <p className="font-semibold">
+                    {formatValue(latestAdmission?.clinical_notes?.[0]?.temperature_c, " °C")}
+                  </p>
+                </div>
+              </div>
+              <div>
+                <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                  Symptoms
+                </p>
+                <p className="font-semibold">{triageSymptoms}</p>
+              </div>
+              <div>
+                <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                  Allergies
+                </p>
+                <p className="font-semibold">{triageAllergies}</p>
+              </div>
+              <div className="text-[11px] text-slate-500">
+                Recorded by: {triageRecordedBy} · {triageRecordedAt}
+              </div>
+            </dl>
+          </div>
+
+          <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <p className="text-xs uppercase tracking-wide text-slate-400">
+                Laboratory results
+              </p>
+              <span className="text-[11px] text-slate-500">
+                {labEntries.length} {labEntries.length === 1 ? "entry" : "entries"}
+              </span>
+            </div>
+            {labEntries.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500">
+                No lab results recorded yet.
+              </p>
+            ) : (
+              <ul className="space-y-2 text-sm text-slate-800">
+                {labEntries.map((entry) => (
+                  <li
+                    key={entry.id}
+                    className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold">{entry.label}</span>
+                    </div>
+                    <p className="text-slate-700">{entry.summary}</p>
+                    <p className="text-[11px] text-slate-500">{entry.meta}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <p className="text-xs uppercase tracking-wide text-slate-400">
+                Treatment records
+              </p>
+              <span className="text-[11px] text-slate-500">
+                {treatmentNotes.length}{" "}
+                {treatmentNotes.length === 1 ? "entry" : "entries"}
+              </span>
+            </div>
+            {treatmentNotes.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500">
+                No documented care plans or treatment notes yet.
+              </p>
+            ) : (
+              <ul className="space-y-2 text-sm text-slate-800">
+                {mostRecentTreatmentNotes.map((note, idx) => (
+                  <li
+                    key={note.id ?? idx}
+                    className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2"
+                  >
+                    <div className="grid grid-cols-3 gap-3 text-[12px] text-slate-700">
+                      <div>
+                        <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                          Route
+                        </p>
+                        <p>{note.treatment_route || "None"}</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                          Complaints
+                        </p>
+                        <p>{note.complaints || "None"}</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                          Next review
+                        </p>
+                        <p>
+                          {(note.next_review_date ||
+                            note.next_treatment_date ||
+                            "None") +
+                            (note.next_treatment_time
+                              ? ` ${note.next_treatment_time}`
+                              : "")}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                          BP (mmHg)
+                        </p>
+                        <p>
+                          {note.systolic_bp || note.diastolic_bp
+                            ? `${note.systolic_bp ?? "None"}/${
+                                note.diastolic_bp ?? "None"
+                              }`
+                            : "None"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                          Pulse (bpm)
+                        </p>
+                        <p>{note.pulse || "None"}</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                          Resp. (cpm)
+                        </p>
+                        <p>{note.respiration_rate || "None"}</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                          Temp (°C)
+                        </p>
+                        <p>{note.temperature_c || "None"}</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                          SpO₂ (%)
+                        </p>
+                        <p>{note.oxygen_saturation || "None"}</p>
+                      </div>
+                      <div className="col-span-3">
+                        <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                          Remarks
+                        </p>
+                        <p>{note.remarks || "None"}</p>
+                      </div>
+                    </div>
+                      <div className="text-[11px] text-slate-500">
+                        Recorded by: {note.recorded_by_name || "None"}({note.recorded_by_role || "None"}) ·
+                          {note.documented_at
+                            ? formatDateTime(note.documented_at)
+                            : note.created_at
+                            ? formatDateTime(note.created_at)
+                            : "None"}
+                        
+                      </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {treatmentNotes.length > 1 && (
+              <button
+                type="button"
+                onClick={() => setShowTreatmentHistory(true)}
+                className="mt-2 w-full rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 bg-[#80ff80] hover:bg-slate-50"
+              >
+                View all treatment records
+              </button>
+            )}
+          </div>
+        </div>
+      </aside>
     );
   };
 
@@ -3713,6 +3959,15 @@ function App() {
     }
   };
 
+  const handleOpenClinicalForm = () => {
+    if (!selectedPatient) {
+      setTreatmentNoteError("Select a patient to document a care plan.");
+      return;
+    }
+    setTreatmentNoteError(null);
+    setShowClinicalForm(true);
+  };
+
   const renderPatientModule = () => {
     if (!hasPatientAccess) {
       return (
@@ -3735,12 +3990,164 @@ function App() {
                 {error}
               </div>
             )}
-            {patientSubPage === "Patient Directory"
-              ? renderPatientDirectory()
-              : renderPatientDetails()}
+            {renderPatientDirectory()}
           </div>
         </main>
         {renderClinicalFormDrawer()}
+        {showTreatmentHistory && (
+          <>
+            <div
+              className="fixed inset-0 z-40 bg-black/30"
+              onClick={() => setShowTreatmentHistory(false)}
+              role="presentation"
+            />
+            <div className="fixed inset-y-0 right-0 z-50 w-full max-w-2xl overflow-y-auto border-l border-slate-200 bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <div>
+                  <h3 className="text-lg font-medium text-slate-900">
+                    Full history
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                  onClick={() => setShowTreatmentHistory(false)}
+                >
+                  Close
+                </button>
+              </div>
+              <div className="space-y-3 p-6">
+                {(() => {
+                  const patient = patients.find((p) => p.id === selectedPatientId);
+                  const historyNotes =
+                    patient?.admissions?.flatMap((admission) =>
+                      (admission.clinical_notes ?? [])
+                        .filter((note) => {
+                          const role = (note.recorded_by_role || "").toLowerCase();
+                          const isLab = role.includes("lab");
+                          const isTriage = role.includes("triage");
+                          return (
+                            !isLab &&
+                            !isTriage &&
+                            (note.treatment_details ||
+                              note.remarks ||
+                              note.complaints ||
+                              note.assessment ||
+                              note.note)
+                          );
+                        })
+                        .map((note) => ({ ...note, admissionId: admission.id }))
+                    ) ?? [];
+                  const sortedNotes = historyNotes.sort(
+                    (a, b) =>
+                      Date.parse(b.documented_at ?? b.created_at ?? "") -
+                      Date.parse(a.documented_at ?? a.created_at ?? "")
+                  );
+                  if (sortedNotes.length === 0) {
+                    return (
+                      <p className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-4 text-sm text-slate-500">
+                        No documented treatment records yet.
+                      </p>
+                    );
+                  }
+                  return sortedNotes.map((note, idx) => (
+                    <div
+                      key={note.id ?? `${note.admissionId}-${idx}`}
+                      className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                    >
+                      <div className="grid grid-cols-3 gap-3 text-[12px] text-slate-700">
+                        <div>
+                          <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                            Route
+                          </p>
+                          <p>{note.treatment_route || "None"}</p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                            Complaints
+                          </p>
+                          <p>{note.complaints || "None"}</p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                            Next review
+                          </p>
+                          <p>
+                            {(note.next_review_date ||
+                              note.next_treatment_date ||
+                              "None") +
+                              (note.next_treatment_time
+                                ? ` ${note.next_treatment_time}`
+                                : "")}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                            BP (mmHg)
+                          </p>
+                          <p>
+                            {note.systolic_bp || note.diastolic_bp
+                              ? `${note.systolic_bp ?? "None"}/${
+                                  note.diastolic_bp ?? "None"
+                                }`
+                              : "None"}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                            Pulse (bpm)
+                          </p>
+                          <p>{note.pulse || "None"}</p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                            Resp. (cpm)
+                          </p>
+                          <p>{note.respiration_rate || "None"}</p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                            Temp (°C)
+                          </p>
+                          <p>{note.temperature_c || "None"}</p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                            SpO₂ (%)
+                          </p>
+                          <p>{note.oxygen_saturation || "None"}</p>
+                        </div>
+                        <div className="col-span-3">
+                          <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                            Remarks
+                          </p>
+                          <p>{note.remarks || "None"}</p>
+                        </div>
+                      </div>
+                        <div className="text-[11px] text-slate-500">
+                          Recorded by: {note.recorded_by_name || "None"}({note.recorded_by_role || "None"}) ·
+                            {note.documented_at
+                              ? formatDateTime(note.documented_at)
+                              : note.created_at
+                              ? formatDateTime(note.created_at)
+                              : "None"}
+                        
+                        </div>
+                    </div>
+                  ));
+                })()}
+              </div>
+            </div>
+          </>
+        )}
+        {patientSubPage === "Patient Details" && selectedPatient && (
+          <div
+            className="fixed inset-0 z-30 bg-black/10"
+            onClick={() => setPatientSubPage("Patient Directory")}
+            role="presentation"
+          />
+        )}
+        {renderPatientInfoDrawer()}
       </>
     );
   };
@@ -3781,10 +4188,12 @@ function App() {
           queue={labQueue}
           records={labRecords}
           orders={labOrders}
+          tasks={labTasks}
           onRecord={handleOpenLabModal}
           onRefreshQueue={loadLabQueue}
           onRefreshRecords={loadLabRecords}
           onRefreshOrders={loadLabOrders}
+          onRefreshTasks={loadLabTasks}
           fetchError={labFetchError}
         />
       );
@@ -3798,800 +4207,10 @@ function App() {
         />
       );
     }
-    if (activeModule === "care-bridge") {
-      return <CareBridgeModule />;
-    }
     if (activeModule === "patients") {
       return renderPatientModule();
     }
     return renderPlaceholderModule();
-  };
-
-  const renderPatientFormModal = () => {
-    const identityFields = (
-      <div className="space-y-4">
-        <div className="grid gap-4 md:grid-cols-2">
-          <div>
-            <label className="text-xs font-semibold text-slate-500">
-              First Name
-            </label>
-            <input
-              className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
-              value={patientForm.first_name}
-              onChange={(event) =>
-                setPatientForm((prev) => ({
-                  ...prev,
-                  first_name: event.target.value,
-                }))
-              }
-              required
-            />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-slate-500">
-              Last Name
-            </label>
-            <input
-              className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
-              value={patientForm.last_name}
-              onChange={(event) =>
-                setPatientForm((prev) => ({
-                  ...prev,
-                  last_name: event.target.value,
-                }))
-              }
-              required
-            />
-          </div>
-        </div>
-        <div className="grid gap-4 md:grid-cols-3">
-          <div>
-            <label className="text-xs font-semibold text-slate-500">
-              Patient ID
-            </label>
-            <input
-              className="mt-1 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700"
-              value={patientForm.patient_identifier}
-              readOnly
-            />
-            <p className="mt-1 text-[11px] uppercase tracking-wide text-slate-400">
-              Generated with prefix{" "}
-              {(patientIdPrefix && patientIdPrefix.toUpperCase()) || "PAT"}
-            </p>
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-slate-500">Age</label>
-            <input
-              type="number"
-              min="0"
-              className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
-              value={patientForm.age}
-              onChange={(event) =>
-                setPatientForm((prev) => ({ ...prev, age: event.target.value }))
-              }
-              required
-            />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-slate-500">Sex</label>
-            <select
-              className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
-              value={patientForm.gender}
-              onChange={(event) =>
-                setPatientForm((prev) => ({
-                  ...prev,
-                  gender: event.target.value,
-                }))
-              }
-            >
-              <option value="">Select</option>
-              <option value="Female">Female</option>
-              <option value="Male">Male</option>
-              <option value="Other">Other</option>
-            </select>
-          </div>
-        </div>
-        <div className="grid gap-4 md:grid-cols-3">
-          <div>
-            <label className="text-xs font-semibold text-slate-500">
-              Weight (kg)
-            </label>
-            <input
-              type="number"
-              min="0"
-              step="0.1"
-              className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
-              value={patientForm.weight_kg}
-              onChange={(event) =>
-                setPatientForm((prev) => ({
-                  ...prev,
-                  weight_kg: event.target.value,
-                }))
-              }
-            />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-slate-500">
-              Patient Phone
-            </label>
-            <input
-              className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
-              value={patientForm.phone_number}
-              onChange={(event) =>
-                setPatientForm((prev) => ({
-                  ...prev,
-                  phone_number: event.target.value,
-                }))
-              }
-              required
-            />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-slate-500">
-              Patient Email
-            </label>
-            <input
-              type="email"
-              className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
-              value={patientForm.email}
-              onChange={(event) =>
-                setPatientForm((prev) => ({
-                  ...prev,
-                  email: event.target.value,
-                }))
-              }
-            />
-          </div>
-        </div>
-        <div>
-          <label className="text-xs font-semibold text-slate-500">
-            Address
-          </label>
-          <input
-            className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
-            value={patientForm.address}
-            onChange={(event) =>
-              setPatientForm((prev) => ({
-                ...prev,
-                address: event.target.value,
-              }))
-            }
-          />
-        </div>
-        <div className="grid gap-4 md:grid-cols-2">
-          <div>
-            <label className="text-xs font-semibold text-slate-500">
-              Next of Kin (N.O.K)
-            </label>
-            <input
-              className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
-              value={patientForm.emergency_contact_name}
-              onChange={(event) => {
-                const value = event.target.value;
-                setPatientForm((prev) => ({
-                  ...prev,
-                  emergency_contact_name: value,
-                }));
-                setInitialAdmissionForm((prev) => ({
-                  ...prev,
-                  next_of_kin_name: value,
-                }));
-              }}
-              required
-            />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-slate-500">
-              N.O.K Contact
-            </label>
-            <input
-              className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
-              value={patientForm.emergency_contact_phone}
-              onChange={(event) => {
-                const value = event.target.value;
-                setPatientForm((prev) => ({
-                  ...prev,
-                  emergency_contact_phone: value,
-                }));
-                setInitialAdmissionForm((prev) => ({
-                  ...prev,
-                  next_of_kin_contact: value,
-                }));
-              }}
-              required
-            />
-          </div>
-        </div>
-      </div>
-    );
-
-    const admissionFields = (
-      <div className="space-y-4">
-        <div className="grid gap-4 md:grid-cols-2">
-          <div>
-            <label className="text-xs font-semibold text-slate-500">
-              Admission Date
-            </label>
-            <input
-              type="date"
-              className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
-              value={initialAdmissionForm.admission_date}
-              onChange={(event) =>
-                setInitialAdmissionForm((prev) => ({
-                  ...prev,
-                  admission_date: event.target.value,
-                }))
-              }
-              required
-            />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-slate-500">
-              Discharge Date
-            </label>
-            <input
-              type="date"
-              className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
-              value={initialAdmissionForm.discharge_date}
-              onChange={(event) =>
-                setInitialAdmissionForm((prev) => ({
-                  ...prev,
-                  discharge_date: event.target.value,
-                }))
-              }
-            />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-slate-500">
-              Review Date
-            </label>
-            <input
-              type="date"
-              className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
-              value={initialAdmissionForm.review_date}
-              onChange={(event) =>
-                setInitialAdmissionForm((prev) => ({
-                  ...prev,
-                  review_date: event.target.value,
-                }))
-              }
-            />
-          </div>
-        </div>
-        <div className="grid gap-4 md:grid-cols-2">
-          <div>
-            <label className="text-xs font-semibold text-slate-500">
-              Diagnosis
-            </label>
-            <textarea
-              className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
-              rows={2}
-              value={initialAdmissionForm.provisional_diagnosis}
-              onChange={(event) =>
-                setInitialAdmissionForm((prev) => ({
-                  ...prev,
-                  provisional_diagnosis: event.target.value,
-                }))
-              }
-              required
-            />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-slate-500">
-              Final Diagnosis
-            </label>
-            <textarea
-              className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
-              rows={2}
-              value={initialAdmissionForm.final_diagnosis}
-              onChange={(event) =>
-                setInitialAdmissionForm((prev) => ({
-                  ...prev,
-                  final_diagnosis: event.target.value,
-                }))
-              }
-            />
-          </div>
-        </div>
-        <div className="grid gap-4 md:grid-cols-2">
-          <div>
-            <label className="text-xs font-semibold text-slate-500">
-              Treatment Frequency
-            </label>
-            <input
-              className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
-              value={initialAdmissionForm.treatment_frequency}
-              onChange={(event) =>
-                setInitialAdmissionForm((prev) => ({
-                  ...prev,
-                  treatment_frequency: event.target.value,
-                }))
-              }
-            />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-slate-500">
-              Treatment Duration
-            </label>
-            <input
-              className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
-              value={initialAdmissionForm.treatment_duration}
-              onChange={(event) =>
-                setInitialAdmissionForm((prev) => ({
-                  ...prev,
-                  treatment_duration: event.target.value,
-                }))
-              }
-            />
-          </div>
-        </div>
-        <div className="space-y-2">
-          <label className="text-xs font-semibold text-slate-500">
-            Lab Tests Done
-          </label>
-          <div className="rounded-2xl border border-slate-200 p-3">
-            <div className="flex flex-wrap gap-2">
-              {initialAdmissionForm.lab_tests_list.map((test) => (
-                <span
-                  key={test}
-                  className="flex items-center gap-1 rounded-full bg-[#E5EDFF] px-3 py-1 text-xs font-semibold text-[#2563EB]"
-                >
-                  {test}
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setInitialAdmissionForm((prev) => ({
-                        ...prev,
-                        lab_tests_list: prev.lab_tests_list.filter(
-                          (entry) => entry !== test
-                        ),
-                      }))
-                    }
-                    className="text-slate-500 hover:text-slate-800"
-                  >
-                    ✕
-                  </button>
-                </span>
-              ))}
-            </div>
-            <div className="mt-3 grid gap-2 md:grid-cols-2">
-              {LAB_TEST_CATALOG.map((test) => {
-                const selected =
-                  initialAdmissionForm.lab_tests_list.includes(test);
-                return (
-                  <button
-                    type="button"
-                    key={test}
-                    onClick={() =>
-                      setInitialAdmissionForm((prev) => {
-                        const exists = prev.lab_tests_list.includes(test);
-                        return {
-                          ...prev,
-                          lab_tests_list: exists
-                            ? prev.lab_tests_list.filter(
-                                (entry) => entry !== test
-                              )
-                            : [...prev.lab_tests_list, test],
-                        };
-                      })
-                    }
-                    className={`rounded-2xl border px-3 py-2 text-left text-xs font-semibold ${
-                      selected
-                        ? "border-[#2563EB] bg-[#E5EDFF] text-[#2563EB]"
-                        : "border-[#E5E7EB] text-[#4B5563] hover:border-[#2563EB]"
-                    }`}
-                  >
-                    {test}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="mt-3">
-              <label className="text-[11px] uppercase tracking-wide text-slate-400">
-                Add custom test
-              </label>
-              <div className="mt-1 flex gap-2">
-                <input
-                  className="flex-1 rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-                  value={initialAdmissionForm.lab_tests_done}
-                  onChange={(event) =>
-                    setInitialAdmissionForm((prev) => ({
-                      ...prev,
-                      lab_tests_done: event.target.value,
-                    }))
-                  }
-                  placeholder="Enter test name"
-                />
-                <button
-                  type="button"
-                  className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600"
-                  onClick={() => {
-                    const value = initialAdmissionForm.lab_tests_done.trim();
-                    if (!value) {
-                      return;
-                    }
-                    setInitialAdmissionForm((prev) => ({
-                      ...prev,
-                      lab_tests_list: prev.lab_tests_list.includes(value)
-                        ? prev.lab_tests_list
-                        : [...prev.lab_tests_list, value],
-                      lab_tests_done: "",
-                    }));
-                  }}
-                >
-                  Add
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="grid gap-4 md:grid-cols-2">
-          <div>
-            <label className="text-xs font-semibold text-slate-500">
-              Allergies
-            </label>
-            <textarea
-              className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
-              rows={2}
-              value={initialAdmissionForm.allergies}
-              onChange={(event) =>
-                setInitialAdmissionForm((prev) => ({
-                  ...prev,
-                  allergies: event.target.value,
-                }))
-              }
-            />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-slate-500">
-              Contraindications
-            </label>
-            <textarea
-              className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
-              rows={2}
-              value={initialAdmissionForm.contraindications}
-              onChange={(event) =>
-                setInitialAdmissionForm((prev) => ({
-                  ...prev,
-                  contraindications: event.target.value,
-                }))
-              }
-            />
-          </div>
-        </div>
-      </div>
-    );
-
-    const stepIndex = patientFormStep === "identity" ? 1 : 2;
-
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
-        <div className="relative flex w-full max-w-3xl flex-col rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl max-h-[90vh] min-h-[60vh] overflow-hidden">
-          <button
-            onClick={() => {
-              setShowPatientForm(false);
-              setFormError(null);
-            }}
-            className="absolute right-6 top-6 rounded-full border border-slate-200 p-2 text-slate-500 hover:text-slate-900"
-          >
-            ✕
-          </button>
-          <div className="sticky top-0 bg-white pb-4 pt-2">
-            <p className="text-xs uppercase tracking-wide text-slate-400">
-              Patient Intake
-            </p>
-            <h2 className="text-2xl font-semibold text-slate-900">
-              Register New Patient
-            </h2>
-            <div className="mt-4 flex items-center gap-3 text-xs font-semibold">
-              <div className="flex items-center gap-2">
-                <span
-                  className={`flex h-8 w-8 items-center justify-center rounded-full ${
-                    stepIndex >= 1
-                      ? "bg-[#2563EB] text-white"
-                      : "bg-slate-200 text-slate-500"
-                  }`}
-                >
-                  1
-                </span>
-                <span
-                  className={
-                    stepIndex >= 1 ? "text-slate-900" : "text-slate-400"
-                  }
-                >
-                  Patient Directory
-                </span>
-              </div>
-              <div className="h-px flex-1 bg-slate-200" />
-              <div className="flex items-center gap-2">
-                <span
-                  className={`flex h-8 w-8 items-center justify-center rounded-full ${
-                    stepIndex === 2
-                      ? "bg-[#2563EB] text-white"
-                      : "bg-slate-200 text-slate-500"
-                  }`}
-                >
-                  2
-                </span>
-                <span
-                  className={
-                    stepIndex === 2 ? "text-slate-900" : "text-slate-400"
-                  }
-                >
-                  Initial Admission
-                </span>
-              </div>
-            </div>
-          </div>
-          {formError && (
-            <div className="mt-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {formError}
-            </div>
-          )}
-          <form
-            onSubmit={handlePatientFormSubmit}
-            className="mt-4 flex flex-1 min-h-0 flex-col"
-          >
-            <div className="flex-1 min-h-0 overflow-y-auto pr-2">
-              {patientFormStep === "identity"
-                ? identityFields
-                : admissionFields}
-            </div>
-            <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-4">
-              <button
-                type="button"
-                onClick={() => {
-                  if (patientFormStep === "admission") {
-                    setPatientFormStep("identity");
-                  } else {
-                    setShowPatientForm(false);
-                    setFormError(null);
-                  }
-                }}
-                className="rounded-full border border-[#E5E7EB] px-6 py-2 text-sm font-semibold text-[#4B5563]"
-              >
-                {patientFormStep === "admission" ? "Back" : "Cancel"}
-              </button>
-              <button
-                type="submit"
-                className="rounded-full bg-[#2563EB] px-6 py-2 text-sm font-semibold text-white shadow-subtle disabled:opacity-60 hover:bg-[#1D4ED8]"
-                disabled={
-                  patientFormStep === "admission" ? savingPatient : false
-                }
-              >
-                {patientFormStep === "admission"
-                  ? savingPatient
-                    ? "Saving…"
-                    : "Save & Activate"
-                  : "Continue"}
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    );
-  };
-
-  const renderAppointmentModal = () => {
-    if (!showAppointmentModal) {
-      return null;
-    }
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6">
-        <div className="w-full max-w-2xl rounded-[32px] bg-white p-6 shadow-2xl">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-wide text-slate-400">
-                Appointments & Scheduling
-              </p>
-              <h3 className="text-2xl font-semibold text-slate-900">
-                Create appointment
-              </h3>
-              <p className="text-sm text-slate-500">
-                Appointments are logged as clinical notes under an admission for
-                accurate traceability.
-              </p>
-            </div>
-            <button
-              className="rounded-full border border-slate-200 px-3 py-1 text-sm text-slate-500"
-              type="button"
-              onClick={() => {
-                setAppointmentFormError(null);
-                setShowAppointmentModal(false);
-              }}
-            >
-              Close
-            </button>
-          </div>
-          {appointmentFormError && (
-            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {appointmentFormError}
-            </div>
-          )}
-          <form
-            onSubmit={handleAppointmentFormSubmit}
-            className="mt-6 space-y-4"
-          >
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="text-xs font-semibold text-slate-500">
-                  Admission
-                </label>
-                <select
-                  className="mt-1 w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-                  value={appointmentForm.admissionId}
-                  onChange={(event) =>
-                    setAppointmentForm((prev) => ({
-                      ...prev,
-                      admissionId: event.target.value,
-                    }))
-                  }
-                  required
-                >
-                  <option value="">Select admission</option>
-                  {selectedPatient?.admissions.map((admission) => (
-                    <option key={admission.id} value={admission.id}>
-                      {admission.provisional_diagnosis || "Admission"} ·{" "}
-                      {formatDateOnly(admission.admission_date)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-500">
-                  Visit type
-                </label>
-                <input
-                  className="mt-1 w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-                  value={appointmentForm.visitType}
-                  onChange={(event) =>
-                    setAppointmentForm((prev) => ({
-                      ...prev,
-                      visitType: event.target.value,
-                    }))
-                  }
-                  placeholder="Consultation, Follow-up, Review…"
-                />
-              </div>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="text-xs font-semibold text-slate-500">
-                  Date
-                </label>
-                <input
-                  type="date"
-                  className="mt-1 w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-                  value={appointmentForm.scheduledDate}
-                  onChange={(event) =>
-                    setAppointmentForm((prev) => ({
-                      ...prev,
-                      scheduledDate: event.target.value,
-                    }))
-                  }
-                  required
-                />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-500">
-                  Time
-                </label>
-                <input
-                  type="time"
-                  className="mt-1 w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-                  value={appointmentForm.scheduledTime}
-                  onChange={(event) =>
-                    setAppointmentForm((prev) => ({
-                      ...prev,
-                      scheduledTime: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="text-xs font-semibold text-slate-500">
-                  Provider name
-                </label>
-                <input
-                  className="mt-1 w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-                  value={appointmentForm.providerName}
-                  onChange={(event) =>
-                    setAppointmentForm((prev) => ({
-                      ...prev,
-                      providerName: event.target.value,
-                    }))
-                  }
-                  required
-                />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-500">
-                  Provider role
-                </label>
-                <input
-                  className="mt-1 w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-                  value={appointmentForm.providerRole}
-                  onChange={(event) =>
-                    setAppointmentForm((prev) => ({
-                      ...prev,
-                      providerRole: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-slate-500">
-                Summary
-              </label>
-              <textarea
-                className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-                rows={3}
-                value={appointmentForm.summary}
-                onChange={(event) =>
-                  setAppointmentForm((prev) => ({
-                    ...prev,
-                    summary: event.target.value,
-                  }))
-                }
-                placeholder="Purpose of visit, planned intervention, materials to prep…"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-slate-500">
-                Complaints / key notes
-              </label>
-              <textarea
-                className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-                rows={2}
-                value={appointmentForm.complaints}
-                onChange={(event) =>
-                  setAppointmentForm((prev) => ({
-                    ...prev,
-                    complaints: event.target.value,
-                  }))
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-[#4B5563]">
-                Follow-up instructions
-              </label>
-              <textarea
-                className="w-full rounded-2xl border border-[#E5E7EB] px-3 py-2 text-sm text-[#111827]"
-                rows={2}
-                value={appointmentForm.followUp}
-                onChange={(event) =>
-                  setAppointmentForm((prev) => ({
-                    ...prev,
-                    followUp: event.target.value,
-                  }))
-                }
-                placeholder="Add preparation instructions, tests to request, or expected outcomes."
-              />
-            </div>
-            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-              <button
-                type="button"
-                className="rounded-full border border-[#E5E7EB] px-4 py-2 text-sm font-semibold text-[#4B5563] hover:bg-[#F3F4F6]"
-                onClick={() => setShowAppointmentModal(false)}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="rounded-full bg-[#2563EB] px-5 py-2 text-sm font-semibold text-white shadow-subtle disabled:opacity-60 hover:bg-[#1D4ED8]"
-                disabled={appointmentSubmitting}
-              >
-                {appointmentSubmitting ? "Saving…" : "Schedule appointment"}
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    );
   };
 
   const renderLabModal = () => {
@@ -4600,27 +4219,61 @@ function App() {
     }
 
     const labValidation = validateLabForm();
-    const labFieldErrors =
-      labResultForm.testType && labResultForm.triageEntryId
-        ? labValidation.fieldErrors
-        : {};
-    const labSaveDisabled =
-      !labResultForm.triageEntryId || !!labValidation.message;
+    const labFieldErrors: Record<string, string> = {};
+    const labSaveDisabled = !labResultForm.triageEntryId || !!labValidation.message;
+    const selectedOrder = labOrders.find(
+      (order) => order.triage_entry === labResultForm.triageEntryId
+    );
+    const selectedQueueEntry =
+      labQueue.find((entry) => entry.id === labResultForm.triageEntryId) || null;
+    const labPatientName =
+      selectedOrder?.patient_name || selectedQueueEntry?.name || "Patient";
+    const labPatientId =
+      selectedOrder?.patient_identifier ||
+      selectedQueueEntry?.patient_identifier ||
+      "PMA0000";
+    const urinalysisFields = [
+      { key: "leukocytes", label: "Leukocytes" },
+      { key: "nitrite", label: "Nitrite" },
+      { key: "urobilinogen", label: "Urobilinogen" },
+      { key: "protein", label: "Protein" },
+      { key: "ph", label: "pH" },
+      { key: "specific_gravity", label: "Specific gravity" },
+      { key: "blood", label: "Blood" },
+      { key: "ketone", label: "Ketone" },
+      { key: "bilirubin", label: "Bilirubin" },
+      { key: "glucose", label: "Glucose" },
+      { key: "appearance", label: "Appearance" },
+      { key: "colour", label: "Colour" },
+      { key: "consistency", label: "Consistency" },
+      { key: "mucus", label: "Mucus" },
+      { key: "amorphous", label: "Amorphous" },
+      { key: "epithelial_cells", label: "Epithelial cells" },
+      { key: "pus_cells", label: "Pus cells" },
+      { key: "yeast_cells", label: "Yeast cells" },
+      { key: "casts", label: "Casts" },
+    ] as const;
+    const stoolFields = [
+      { key: "appearance", label: "Appearance" },
+      { key: "colour", label: "Colour" },
+      { key: "consistency", label: "Consistency" },
+      { key: "blood", label: "Blood" },
+      { key: "mucus", label: "Mucus" },
+    ] as const;
+    const electrolyteFields = [
+      { key: "na", label: "Na (mmol/L)" },
+      { key: "k", label: "K (mmol/L)" },
+      { key: "cl", label: "Cl (mmol/L)" },
+    ] as const;
 
     return (
       <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/60 px-4 py-6">
         <div className="h-full w-full max-w-6xl overflow-y-auto rounded-[32px] bg-white p-6 shadow-2xl">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs uppercase tracking-wide text-slate-400">
-                Laboratory
-              </p>
-              <h3 className="text-2xl font-semibold text-slate-900">
+              <h3 className="text-2xl font-medium text-slate-900">
                 Record lab results
               </h3>
-              <p className="text-sm text-slate-500">
-                Pick a test from the list, then capture details on the right.
-              </p>
             </div>
             <button
               className="rounded-full border border-slate-200 px-3 py-1 text-sm text-slate-500"
@@ -4641,533 +4294,125 @@ function App() {
           )}
 
           <div className="mt-6 grid gap-6 lg:grid-cols-[320px,1fr]">
-            <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-              <p className="text-xs uppercase tracking-wide text-slate-400">
-                Test list
-              </p>
-              <div className="space-y-2">
-                {LAB_TESTS.map((test) => {
-                  const selected = labResultForm.testType === test;
-                  return (
-                    <button
-                      key={test}
-                      type="button"
-                      className={`flex w-full items-center justify-between rounded-xl border px-3 py-2 text-sm font-semibold ${
-                        selected
+              <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 max-h-[72vh] overflow-y-auto">
+                <p className="text-xs uppercase tracking-wide text-slate-400">
+                  Test list
+                </p>
+                <div className="space-y-2">
+                  {LAB_TESTS.map((test) => {
+                    const selected = labResultForm.testType === test;
+                    const hasCompleted =
+                      labResultForm.triageEntryId &&
+                      labCompletedTests[labResultForm.triageEntryId]?.has(test);
+                    return (
+                      <button
+                        key={test}
+                        type="button"
+                        className={`flex w-full items-center justify-between rounded-xl border px-3 py-2 text-sm font-semibold ${
+                          selected
                           ? "border-blue-300 bg-blue-50 text-blue-700"
                           : "border-slate-200 bg-white text-slate-800 hover:border-slate-300"
                       }`}
                       onClick={() => loadDraftForTest(test)}
                     >
-                      <span>{test}</span>
-                    </button>
-                  );
-                })}
+                      <span className="flex items-center gap-2">
+                        {test}
+                        {hasCompleted && (
+                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                            ✓ Recorded
+                          </span>
+                        )}
+                      </span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
 
-            <div className="space-y-4">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+            <div className="flex max-h-[78vh] flex-col gap-4 overflow-y-auto pr-1">
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-500">
+                      Order details
+                    </p>
+                    <h4 className="text-base font-semibold text-slate-900">
+                      {labPatientName}
+                    </h4>
+                    <p className="text-xs text-slate-500">
+                      Patient ID: {labPatientId}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      Test: {labResultForm.testType || "Select a test"}
+                    </p>
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    <p>
+                      Ordered on:{" "}
+                      {selectedOrder?.created_at
+                        ? formatDateTime(selectedOrder.created_at)
+                        : "—"}
+                    </p>
+                    <p>
+                      Priority:{" "}
+                      {selectedOrder?.priority || "—"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 max-h-[65vh] overflow-y-auto">
                 <div className="mb-3">
                   <p className="text-xs uppercase tracking-wide text-slate-400">
-                    {labResultForm.testType || "Select a test"}
+                    Result entry
                   </p>
                   <p className="text-sm text-slate-600">
                     {labResultForm.testType
                       ? "Select outcome and enter required parameters."
-                      : "Choose a test from the list to begin."}
+                      : "Choose a test from the list to record results."}
                   </p>
                 </div>
 
                 <div className="space-y-4">
-                  {labResultForm.testType === "Blood Slide" && (
-                    <>
+                  {!labResultForm.testType && (
+                    <p className="text-sm text-slate-500">
+                      Select a test from the list to capture results.
+                    </p>
+                  )}
+                  {labResultForm.testType &&
+                    labCategoricalOptions[labResultForm.testType] && (
                       <div className="space-y-2 md:max-w-xs">
                         <label className="text-xs font-semibold text-slate-500">
                           Outcome
                         </label>
                         <select
                           className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-                          value={bloodSlideForm.result}
-                          onChange={(event) =>
-                            setBloodSlideForm((prev) => {
-                              const next = {
-                                ...prev,
-                                result: event.target.value,
-                              };
-                              persistDraftForCurrentTest({ bloodSlide: next });
-                              setLabError(null);
-                              return next;
-                            })
-                          }
-                        >
-                          <option value="">Select…</option>
-                          <option value="Negative">Negative</option>
-                          <option value="Positive (Species Identified)">
-                            Positive (Species Identified)
-                          </option>
-                          <option value="Positive (Species Not Identified)">
-                            Positive (Species Not Identified)
-                          </option>
-                          <option value="Positive – Mixed">
-                            Positive – Mixed
-                          </option>
+                        value={labCategory}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setLabCategory(value);
+                          persistDraftForCurrentTest({ category: value });
+                          setLabError(null);
+                        }}
+                      >
+                        <option value="">Select…</option>
+                          {labCategoricalOptions[labResultForm.testType].map(
+                            (option) => (
+                              <option key={option} value={option}>
+                                {option}
+                              </option>
+                            )
+                          )}
                         </select>
-                        {labFieldErrors.outcome && (
+                        {labFieldErrors.category && (
                           <p className="text-xs text-red-600">
-                            {labFieldErrors.outcome}
+                            {labFieldErrors.category}
                           </p>
                         )}
                       </div>
+                    )}
 
-                      {bloodSlideForm.result &&
-                        bloodSlideForm.result !== "Negative" && (
-                          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-                            <div className="mb-3">
-                              <p className="text-xs uppercase tracking-wide text-slate-400">
-                                Blood Slide details
-                              </p>
-                            </div>
-                            <div className="grid gap-4 md:grid-cols-2">
-                              {bloodSlideForm.result ===
-                                "Positive (Species Identified)" && (
-                                <>
-                                  <div className="space-y-2">
-                                    <label className="text-xs font-semibold text-slate-500">
-                                      Species
-                                    </label>
-                                    <select
-                                      className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-                                      value={bloodSlideForm.species}
-                                      onChange={(event) =>
-                                        setBloodSlideForm((prev) => {
-                                          const next = {
-                                            ...prev,
-                                            species: event.target.value,
-                                          };
-                                          persistDraftForCurrentTest({
-                                            bloodSlide: next,
-                                          });
-                                          setLabError(null);
-                                          return next;
-                                        })
-                                      }
-                                    >
-                                      <option value="">Select species…</option>
-                                      <option value="Plasmodium falciparum">
-                                        Plasmodium falciparum
-                                      </option>
-                                      <option value="Plasmodium vivax">
-                                        Plasmodium vivax
-                                      </option>
-                                      <option value="Plasmodium malariae">
-                                        Plasmodium malariae
-                                      </option>
-                                      <option value="Plasmodium ovale">
-                                        Plasmodium ovale
-                                      </option>
-                                    </select>
-                                    {labFieldErrors.species && (
-                                      <p className="text-xs text-red-600">
-                                        {labFieldErrors.species}
-                                      </p>
-                                    )}
-                                  </div>
-                                  <div className="space-y-2">
-                                    <label className="text-xs font-semibold text-slate-500">
-                                      Parasitemia level
-                                    </label>
-                                    <select
-                                      className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-                                      value={bloodSlideForm.parasitemia}
-                                      onChange={(event) =>
-                                        setBloodSlideForm((prev) => {
-                                          const next = {
-                                            ...prev,
-                                            parasitemia: event.target.value,
-                                          };
-                                          persistDraftForCurrentTest({
-                                            bloodSlide: next,
-                                          });
-                                          setLabError(null);
-                                          return next;
-                                        })
-                                      }
-                                    >
-                                      <option value="">Select level…</option>
-                                      <option value="+ (Low)">+ (Low)</option>
-                                      <option value="++ (Moderate)">
-                                        ++ (Moderate)
-                                      </option>
-                                      <option value="+++ (High)">
-                                        +++ (High)
-                                      </option>
-                                      <option value="++++ (Very High)">
-                                        ++++ (Very High)
-                                      </option>
-                                    </select>
-                                    {labFieldErrors.parasitemia && (
-                                      <p className="text-xs text-red-600">
-                                        {labFieldErrors.parasitemia}
-                                      </p>
-                                    )}
-                                  </div>
-                                </>
-                              )}
-
-                              {bloodSlideForm.result ===
-                                "Positive (Species Not Identified)" && (
-                                <div className="space-y-2 md:col-span-2 md:max-w-xs">
-                                  <label className="text-xs font-semibold text-slate-500">
-                                    Parasitemia level
-                                  </label>
-                                  <select
-                                    className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-                                    value={bloodSlideForm.parasitemia}
-                                    onChange={(event) =>
-                                      setBloodSlideForm((prev) => {
-                                        const next = {
-                                          ...prev,
-                                          parasitemia: event.target.value,
-                                        };
-                                        persistDraftForCurrentTest({
-                                          bloodSlide: next,
-                                        });
-                                        setLabError(null);
-                                        return next;
-                                      })
-                                    }
-                                  >
-                                    <option value="">Select level…</option>
-                                    <option value="++">++</option>
-                                    <option value="+++">+++</option>
-                                    <option value="++++">++++</option>
-                                  </select>
-                                  {labFieldErrors.parasitemia && (
-                                    <p className="text-xs text-red-600">
-                                      {labFieldErrors.parasitemia}
-                                    </p>
-                                  )}
-                                </div>
-                              )}
-
-                              {bloodSlideForm.result === "Positive – Mixed" && (
-                                <>
-                                  <div className="space-y-2 md:col-span-2">
-                                    <label className="text-xs font-semibold text-slate-500">
-                                      Species present
-                                    </label>
-                                    <div className="grid gap-2 md:grid-cols-2">
-                                      {[
-                                        ["falciparum", "P. falciparum"],
-                                        ["vivax", "P. vivax"],
-                                        ["malariae", "P. malariae"],
-                                        ["ovale", "P. ovale"],
-                                      ].map(([key, label]) => (
-                                        <label
-                                          key={key}
-                                          className="flex items-center gap-2 text-sm text-slate-700"
-                                        >
-                                          <input
-                                            type="checkbox"
-                                            className="h-4 w-4 rounded border-slate-300 text-blue-600"
-                                            checked={
-                                              bloodSlideForm.speciesMixed[
-                                                key as keyof typeof bloodSlideForm.speciesMixed
-                                              ]
-                                            }
-                                            onChange={(event) =>
-                                              setBloodSlideForm((prev) => {
-                                                const next = {
-                                                  ...prev,
-                                                  speciesMixed: {
-                                                    ...prev.speciesMixed,
-                                                    [key]: event.target.checked,
-                                                  },
-                                                };
-                                                persistDraftForCurrentTest({
-                                                  bloodSlide: next,
-                                                });
-                                                setLabError(null);
-                                                return next;
-                                              })
-                                            }
-                                          />
-                                          {label}
-                                        </label>
-                                      ))}
-                                    </div>
-                                    {labFieldErrors.speciesMixed && (
-                                      <p className="text-xs text-red-600">
-                                        {labFieldErrors.speciesMixed}
-                                      </p>
-                                    )}
-                                  </div>
-                                  <div className="space-y-2 md:col-span-2 md:max-w-xs">
-                                    <label className="text-xs font-semibold text-slate-500">
-                                      Parasitemia level
-                                    </label>
-                                    <select
-                                      className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-                                      value={bloodSlideForm.parasitemia}
-                                      onChange={(event) =>
-                                        setBloodSlideForm((prev) => {
-                                          const next = {
-                                            ...prev,
-                                            parasitemia: event.target.value,
-                                          };
-                                          persistDraftForCurrentTest({
-                                            bloodSlide: next,
-                                          });
-                                          setLabError(null);
-                                          return next;
-                                        })
-                                      }
-                                    >
-                                      <option value="">Select level…</option>
-                                      <option value="++">++</option>
-                                      <option value="+++">+++</option>
-                                      <option value="++++">++++</option>
-                                    </select>
-                                    {labFieldErrors.parasitemia && (
-                                      <p className="text-xs text-red-600">
-                                        {labFieldErrors.parasitemia}
-                                      </p>
-                                    )}
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                    </>
-                  )}
-
-                  {labResultForm.testType === "MRST" && (
-                    <div className="space-y-2 md:max-w-xs">
-                      <label className="text-xs font-semibold text-slate-500">
-                        Result
-                      </label>
-                      <select
-                        className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-                        value={labCategory}
-                        onChange={(event) => {
-                          const value = event.target.value;
-                          setLabCategory(value);
-                          persistDraftForCurrentTest({ category: value });
-                          setLabError(null);
-                        }}
-                      >
-                        <option value="">Select…</option>
-                        <option value="Negative">Negative</option>
-                        <option value="Positive">Positive</option>
-                      </select>
-                      {labFieldErrors.category && (
-                        <p className="text-xs text-red-600">
-                          {labFieldErrors.category}
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {labResultForm.testType === "H. Pylori Antibody" && (
-                    <div className="space-y-2 md:max-w-xs">
-                      <label className="text-xs font-semibold text-slate-500">
-                        Result
-                      </label>
-                      <select
-                        className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-                        value={labCategory}
-                        onChange={(event) => {
-                          const value = event.target.value;
-                          setLabCategory(value);
-                          persistDraftForCurrentTest({ category: value });
-                          setLabError(null);
-                        }}
-                      >
-                        <option value="">Select…</option>
-                        <option value="Negative">Negative</option>
-                        <option value="IgM positive">IgM positive</option>
-                        <option value="IgA positive">IgA positive</option>
-                      </select>
-                      {labFieldErrors.category && (
-                        <p className="text-xs text-red-600">
-                          {labFieldErrors.category}
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {labResultForm.testType === "Blood Grouping (ABO + Rh)" && (
-                    <div className="space-y-2 md:max-w-xs">
-                      <label className="text-xs font-semibold text-slate-500">
-                        Blood group
-                      </label>
-                      <select
-                        className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-                        value={labCategory}
-                        onChange={(event) => {
-                          const value = event.target.value;
-                          setLabCategory(value);
-                          persistDraftForCurrentTest({ category: value });
-                          setLabError(null);
-                        }}
-                      >
-                        <option value="">Select…</option>
-                        {["A+", "B+", "AB+", "O+", "A-", "B-", "AB-", "O-"].map(
-                          (group) => (
-                            <option key={group} value={group}>
-                              {group}
-                            </option>
-                          )
-                        )}
-                      </select>
-                      {labFieldErrors.category && (
-                        <p className="text-xs text-red-600">
-                          {labFieldErrors.category}
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {labResultForm.testType === "Typhoid Test" && (
-                    <div className="space-y-2 md:max-w-xs">
-                      <label className="text-xs font-semibold text-slate-500">
-                        Result
-                      </label>
-                      <select
-                        className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-                        value={labCategory}
-                        onChange={(event) => {
-                          const value = event.target.value;
-                          setLabCategory(value);
-                          persistDraftForCurrentTest({ category: value });
-                          setLabError(null);
-                        }}
-                      >
-                        <option value="">Select…</option>
-                        <option value="Negative">Negative</option>
-                        <option value="IgG positive">IgG positive</option>
-                        <option value="IgA positive">IgA positive</option>
-                        <option value="IgM positive">IgM positive</option>
-                      </select>
-                      {labFieldErrors.category && (
-                        <p className="text-xs text-red-600">
-                          {labFieldErrors.category}
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {labResultForm.testType === "HCT (Hematocrit)" && (
-                    <div className="space-y-2 md:max-w-xs">
-                      <label className="text-xs font-semibold text-slate-500">
-                        Result
-                      </label>
-                      <select
-                        className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-                        value={labCategory}
-                        onChange={(event) => {
-                          const value = event.target.value;
-                          setLabCategory(value);
-                          persistDraftForCurrentTest({ category: value });
-                          setLabError(null);
-                        }}
-                      >
-                        <option value="">Select…</option>
-                        <option value="Negative">Negative</option>
-                        <option value="Positive">Positive</option>
-                      </select>
-                      {labFieldErrors.category && (
-                        <p className="text-xs text-red-600">
-                          {labFieldErrors.category}
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {labResultForm.testType === "VDRL / RPR" && (
-                    <div className="space-y-2 md:max-w-xs">
-                      <label className="text-xs font-semibold text-slate-500">
-                        Result
-                      </label>
-                      <select
-                        className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-                        value={labCategory}
-                        onChange={(event) => {
-                          const value = event.target.value;
-                          setLabCategory(value);
-                          persistDraftForCurrentTest({ category: value });
-                          setLabError(null);
-                        }}
-                      >
-                        <option value="">Select…</option>
-                        <option value="Negative">Negative</option>
-                        <option value="Positive">Positive</option>
-                      </select>
-                      {labFieldErrors.category && (
-                        <p className="text-xs text-red-600">
-                          {labFieldErrors.category}
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {labResultForm.testType === "HCG (Urine)" && (
-                    <div className="space-y-2 md:max-w-xs">
-                      <label className="text-xs font-semibold text-slate-500">
-                        Result
-                      </label>
-                      <select
-                        className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-                        value={labCategory}
-                        onChange={(event) => {
-                          const value = event.target.value;
-                          setLabCategory(value);
-                          persistDraftForCurrentTest({ category: value });
-                          setLabError(null);
-                        }}
-                      >
-                        <option value="">Select…</option>
-                        <option value="Negative">Negative</option>
-                        <option value="Positive">Positive</option>
-                      </select>
-                      {labFieldErrors.category && (
-                        <p className="text-xs text-red-600">
-                          {labFieldErrors.category}
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {labResultForm.testType === "HCG (Serum)" && (
-                    <div className="space-y-2 md:max-w-xs">
-                      <label className="text-xs font-semibold text-slate-500">
-                        Result
-                      </label>
-                      <select
-                        className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-                        value={labCategory}
-                        onChange={(event) => {
-                          const value = event.target.value;
-                          setLabCategory(value);
-                          persistDraftForCurrentTest({ category: value });
-                          setLabError(null);
-                        }}
-                      >
-                        <option value="">Select…</option>
-                        <option value="Negative">Negative</option>
-                        <option value="Positive">Positive</option>
-                      </select>
-                      {labFieldErrors.category && (
-                        <p className="text-xs text-red-600">
-                          {labFieldErrors.category}
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {labResultForm.testType === "RBS (Random Blood Sugar)" && (
+                  {labResultForm.testType === "RBS / FBS" && (
                     <div className="space-y-2 md:max-w-xs">
                       <label className="text-xs font-semibold text-slate-500">
                         Value (mmol/L)
@@ -5197,106 +4442,170 @@ function App() {
                     </div>
                   )}
 
-                  {labResultForm.testType === "CBC (Complete Blood Count)" && (
-                    <div className="space-y-2">
+                  {labResultForm.testType === "Electrolytes" && (
+                    <div className="space-y-3">
                       <label className="text-xs font-semibold text-slate-500">
-                        Key parameters
+                        Electrolytes
                       </label>
-                      <textarea
-                        className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-                        rows={3}
-                        placeholder="Hb, WBC + diff, Platelets, MCV, MCHC…"
-                        value={labResultForm.results}
-                        onChange={(event) =>
-                          setLabResultForm((prev) => {
-                            const next = {
-                              ...prev,
-                              results: event.target.value,
-                            };
-                            persistDraftForCurrentTest({
-                              results: next.results,
-                            });
-                            setLabError(null);
-                            return next;
-                          })
-                        }
-                      />
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        {electrolyteFields.map(({ key, label }) => (
+                          <div key={key} className="space-y-1">
+                            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                              {label}
+                            </span>
+                            <input
+                              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                              value={electrolytesForm[key]}
+                              onChange={(event) => {
+                                const value = event.target.value;
+                                setElectrolytesForm((prev) => {
+                                  const next = {
+                                    ...prev,
+                                    [key]: value,
+                                  } as typeof defaultElectrolytes;
+                                  persistDraftForCurrentTest({
+                                    electrolytes: next,
+                                  });
+                                  return next;
+                                });
+                                setLabError(null);
+                              }}
+                              placeholder="e.g. 135"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      {labFieldErrors.electrolytes && (
+                        <p className="text-xs text-red-600">
+                          {labFieldErrors.electrolytes}
+                        </p>
+                      )}
                     </div>
                   )}
 
                   {labResultForm.testType === "Urinalysis" && (
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                       <label className="text-xs font-semibold text-slate-500">
-                        Findings
+                        Parameters
                       </label>
-                      <textarea
-                        className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-                        rows={3}
-                        placeholder="Leukocytes, Nitrite, pH, SG, Protein, Glucose, Ketones, Microscopy findings…"
-                        value={labResultForm.results}
-                        onChange={(event) =>
-                          setLabResultForm((prev) => {
-                            const next = {
-                              ...prev,
-                              results: event.target.value,
-                            };
-                            persistDraftForCurrentTest({
-                              results: next.results,
-                            });
-                            setLabError(null);
-                            return next;
-                          })
-                        }
-                      />
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {urinalysisFields.map(({ key, label }) => (
+                          <div key={key} className="space-y-1">
+                            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                              {label}
+                            </span>
+                            <input
+                              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                              value={urinalysisForm[key]}
+                              onChange={(event) => {
+                                const value = event.target.value;
+                                setUrinalysisForm((prev) => {
+                                  const next = {
+                                    ...prev,
+                                    [key]: value,
+                                  } as typeof defaultUrinalysis;
+                                  persistDraftForCurrentTest({
+                                    urinalysis: next,
+                                  });
+                                  return next;
+                                });
+                                setLabError(null);
+                              }}
+                              placeholder="Enter value"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      {labFieldErrors.urinalysis && (
+                        <p className="text-xs text-red-600">
+                          {labFieldErrors.urinalysis}
+                        </p>
+                      )}
                     </div>
                   )}
 
-                  {!labResultForm.testType && (
-                    <p className="text-sm text-slate-500">
-                      Select a test from the left to begin entering results.
-                    </p>
+                  {labResultForm.testType === "Stool Analysis" && (
+                    <div className="space-y-3">
+                      <label className="text-xs font-semibold text-slate-500">
+                        Parameters
+                      </label>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {stoolFields.map(({ key, label }) => (
+                          <div key={key} className="space-y-1">
+                            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                              {label}
+                            </span>
+                            <input
+                              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                              value={stoolForm[key]}
+                              onChange={(event) => {
+                                const value = event.target.value;
+                                setStoolForm((prev) => {
+                                  const next = {
+                                    ...prev,
+                                    [key]: value,
+                                  } as typeof defaultStool;
+                                  persistDraftForCurrentTest({ stool: next });
+                                  return next;
+                                });
+                                setLabError(null);
+                              }}
+                              placeholder="Enter value"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      {labFieldErrors.stool && (
+                        <p className="text-xs text-red-600">
+                          {labFieldErrors.stool}
+                        </p>
+                      )}
+                    </div>
                   )}
+
+                  {labResultForm.testType &&
+                    !labCategoricalOptions[labResultForm.testType] &&
+                    ![
+                      "RBS / FBS",
+                      "Electrolytes",
+                      "Urinalysis",
+                      "Stool Analysis",
+                    ].includes(labResultForm.testType) && (
+                      <p className="text-sm text-slate-500">
+                        Add any clinical notes or supporting details below.
+                      </p>
+                    )}
                 </div>
               </div>
 
               {labResultForm.testType && (
                 <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <label className="text-xs font-semibold text-slate-500">
-                        Remarks
-                      </label>
-                      <textarea
-                        className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-                        rows={4}
-                        value={labResultForm.results}
-                        onChange={(event) =>
-                          setLabResultForm((prev) => {
-                            const next = {
-                              ...prev,
-                              results: event.target.value,
-                            };
-                            persistDraftForCurrentTest({
-                              results: next.results,
-                            });
-                            setLabError(null);
-                            return next;
-                          })
-                        }
-                        placeholder="Capture additional parameters, remarks, or supporting notes."
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-xs font-semibold text-slate-500">
-                        Recorded at
-                      </label>
-                      <input
-                        type="datetime-local"
-                        className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-                        value={labResultForm.recordedAt}
-                        readOnly
-                      />
-                    </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold text-slate-500">
+                      Additional notes
+                    </label>
+                    <textarea
+                      className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
+                      rows={4}
+                      value={labResultForm.results}
+                      onChange={(event) =>
+                        setLabResultForm((prev) => {
+                          const next = {
+                            ...prev,
+                            results: event.target.value,
+                          };
+                          persistDraftForCurrentTest({
+                            results: next.results,
+                          });
+                          setLabError(null);
+                          return next;
+                        })
+                      }
+                      placeholder="Capture supporting notes or clinician comments."
+                    />
+                    <p className="text-xs text-slate-500">
+                      Timestamp is captured automatically on save.
+                    </p>
                   </div>
                 </div>
               )}
@@ -5308,7 +4617,7 @@ function App() {
               type="button"
               onClick={handleLabResultSubmit}
               disabled={labSaveDisabled}
-              className="rounded-full bg-[#2563EB] px-5 py-2 text-sm font-semibold text-white shadow-subtle hover:bg-[#1D4ED8] disabled:opacity-50 disabled:cursor-not-allowed"
+              className="rounded-full bg-[#008000] px-5 py-2 text-sm font-semibold text-white shadow-subtle hover:bg-[#008000] disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Save
             </button>

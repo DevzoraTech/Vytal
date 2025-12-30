@@ -254,6 +254,8 @@ class TriageEntry(SoftDeleteModel):
     contact_phone = models.CharField(max_length=30, blank=True)
     symptoms = models.TextField(blank=True)
     allergies = models.TextField(blank=True)
+    recorded_by_name = models.CharField(max_length=150, blank=True)
+    recorded_by_role = models.CharField(max_length=150, blank=True)
     temperature_c = models.DecimalField(
         max_digits=4, decimal_places=1, null=True, blank=True
     )

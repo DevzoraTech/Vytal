@@ -36,6 +36,84 @@ from .serializers import (
     UserSerializer,
 )
 
+def _generate_patient_identifier() -> str:
+    prefix = "PM"
+    last_patient = (
+        Patient.objects.filter(patient_identifier__startswith=prefix)
+        .exclude(patient_identifier="")
+        .order_by('-patient_identifier')
+        .first()
+    )
+    letter = "A"
+    number = 1
+    if last_patient:
+        pid = last_patient.patient_identifier.upper()
+        if len(pid) >= 4:
+            letter = pid[2] if pid[2].isalpha() else "A"
+            try:
+                number = int(pid[3:]) + 1
+            except ValueError:
+                number = 1
+            if number > 9999:
+                number = 1
+                letter = chr(ord(letter) + 1) if letter != "Z" else "A"
+    return f"{prefix}{letter}{number:04d}"
+
+
+def _get_or_create_patient_and_admission_from_triage(entry: TriageEntry):
+    patient = None
+    if entry.phone_number:
+        patient = (
+            Patient.objects.filter(phone_number=entry.phone_number, is_archived=False)
+            .order_by('-id')
+            .first()
+        )
+    if not patient:
+        full_name = entry.full_name.strip() or "Patient"
+        parts = full_name.split(" ", 1)
+        first_name = parts[0]
+        last_name = parts[1] if len(parts) > 1 else "Triage"
+        patient = Patient.objects.create(
+            first_name=first_name,
+            last_name=last_name,
+            patient_identifier=_generate_patient_identifier(),
+            age=entry.age,
+            gender=entry.sex,
+            weight_kg=entry.weight_kg,
+            phone_number=entry.phone_number or "",
+            email=entry.email or "",
+            address=entry.address or "",
+            emergency_contact_name=entry.contact_name or "",
+            emergency_contact_phone=entry.contact_phone or "",
+            notes=entry.symptoms or "",
+        )
+    admission = (
+        Admission.objects.filter(
+            patient=patient, status=Admission.Status.ACTIVE, is_archived=False
+        )
+        .order_by('-admission_date', '-id')
+        .first()
+    )
+    if not admission:
+        admission_date = entry.admission_date or timezone.now().date()
+        admission = Admission.objects.create(
+            patient=patient,
+            admission_date=admission_date,
+            discharge_date=None,
+            provisional_diagnosis=entry.symptoms or "Provisional assessment",
+            final_diagnosis="",
+            treatment_duration="",
+            treatment_frequency="",
+            lab_tests_done="",
+            next_of_kin_name=entry.contact_name or "",
+            next_of_kin_contact=entry.contact_phone or "",
+            allergies=entry.allergies or "",
+            contraindications="",
+            review_date=None,
+            status=Admission.Status.ACTIVE,
+        )
+    return patient, admission
+
 User = get_user_model()
 
 
@@ -211,6 +289,11 @@ class TriageEntryViewSet(viewsets.ModelViewSet):
     queryset = TriageEntry.objects.none()
     serializer_class = TriageEntrySerializer
 
+    def perform_create(self, serializer):
+        user = self.request.user
+        recorded_by_name = user.get_full_name() or user.username
+        serializer.save(recorded_by_name=recorded_by_name, recorded_by_role="Triage")
+
     def get_queryset(self):
         queryset = TriageEntry.objects.filter(is_archived=False)
         status_filter = self.request.query_params.get('status')
@@ -275,46 +358,46 @@ class TriageEntryViewSet(viewsets.ModelViewSet):
         patient = serializer.save()
         entry.status = TriageEntry.Status.TREATMENT
         entry.save(update_fields=['status', 'updated_at'])
+        admission = getattr(patient, "latest_admission", None)
+        if admission:
+            ClinicalNote.objects.create(
+                admission=admission,
+                documented_at=timezone.now(),
+                systolic_bp=None,
+                diastolic_bp=None,
+                pulse=None,
+                respiration_rate=None,
+                temperature_c=entry.temperature_c,
+                oxygen_saturation=None,
+                treatment_details=entry.symptoms or "Triage assessment",
+                treatment_route="Triage",
+                complaints=entry.symptoms or "",
+                remarks="",
+                recorded_by_name=self.request.user.get_full_name()
+                or self.request.user.username,
+                recorded_by_role="Triage",
+            )
+            ConsultationEvent.objects.create(
+                admission=admission,
+                event_type="triage_escalated",
+                payload={"triage_entry_id": entry.id},
+                occurred_at=timezone.now(),
+                actor_name=self.request.user.get_full_name()
+                or self.request.user.username,
+                actor_role="Triage",
+            )
+            ConsultationTask.objects.create(
+                admission=admission,
+                task_type=ConsultationTask.TaskType.ACK_REQUIRED,
+                target_role="lab",
+                message="New triage encounter ready for lab review",
+                created_by=self.request.user,
+            )
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
 def _ensure_patient_and_admission_from_triage(entry: TriageEntry):
-    full_name = entry.full_name.strip() or "Patient"
-    parts = full_name.split(" ", 1)
-    first_name = parts[0]
-    last_name = parts[1] if len(parts) > 1 else "Triage"
-    admission_date = entry.admission_date or timezone.now().date()
-    patient = Patient.objects.create(
-        first_name=first_name,
-        last_name=last_name,
-        patient_identifier="",
-        age=entry.age,
-        gender=entry.sex,
-        weight_kg=entry.weight_kg,
-        phone_number=entry.phone_number or "",
-        email=entry.email or "",
-        address=entry.address or "",
-        emergency_contact_name=entry.contact_name or "",
-        emergency_contact_phone=entry.contact_phone or "",
-        notes=entry.symptoms or "",
-    )
-    admission = Admission.objects.create(
-        patient=patient,
-        admission_date=admission_date,
-        discharge_date=None,
-        provisional_diagnosis=entry.symptoms or "Provisional assessment",
-        final_diagnosis="",
-        treatment_duration="",
-        treatment_frequency="",
-        lab_tests_done="",
-        next_of_kin_name=entry.contact_name or "",
-        next_of_kin_contact=entry.contact_phone or "",
-        allergies=entry.allergies or "",
-        contraindications="",
-        review_date=None,
-        status=Admission.Status.ACTIVE,
-    )
-    return patient, admission
+    return _get_or_create_patient_and_admission_from_triage(entry)
 
 
 class LabQueueView(APIView):
@@ -322,7 +405,10 @@ class LabQueueView(APIView):
 
     def get(self, request):
         entries = (
-            TriageEntry.objects.filter(is_archived=False, status=TriageEntry.Status.TRIAGE)
+            TriageEntry.objects.filter(
+                is_archived=False,
+                status__in=[TriageEntry.Status.TRIAGE, TriageEntry.Status.TREATMENT],
+            )
             .order_by('-admission_date', '-id')
         )
         serializer = TriageEntrySerializer(entries, many=True)
@@ -406,6 +492,22 @@ class LabResultViewSet(viewsets.ModelViewSet):
             created_by=self.request.user,
             admission_reference=str(admission.id),
         )
+        if lab_result.lab_order_id:
+            LabOrder.objects.filter(id=lab_result.lab_order_id).update(
+                status=LabOrder.Status.COMPLETED, updated_at=timezone.now()
+            )
+            ConsultationEvent.objects.create(
+                admission=admission,
+                event_type="lab_order_completed",
+                payload={
+                    "order_id": lab_result.lab_order_id,
+                    "result_id": lab_result.id,
+                    "test_type": lab_result.test_type,
+                },
+                occurred_at=recorded_at_value,
+                actor_name=recorded_by_name,
+                actor_role=recorded_by_role or "Laboratory",
+            )
 
         ClinicalNote.objects.create(
             admission=admission,
@@ -433,6 +535,19 @@ class LabResultViewSet(viewsets.ModelViewSet):
         if triage_entry:
             triage_entry.status = TriageEntry.Status.LAB_DONE
             triage_entry.save(update_fields=['status', 'updated_at'])
+        ConsultationEvent.objects.create(
+            admission=admission,
+            event_type="lab_result_recorded",
+            payload={
+                "result_id": lab_result.id,
+                "test_type": lab_result.test_type,
+                "lab_order": lab_result.lab_order_id,
+                "status": lab_result.status,
+            },
+            occurred_at=lab_result.recorded_at,
+            actor_name=recorded_by_name,
+            actor_role=recorded_by_role or "Laboratory",
+        )
 
 
 class LabOrderViewSet(viewsets.ModelViewSet):
@@ -454,6 +569,31 @@ class LabOrderViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(ordered_by=self.request.user, created_by=self.request.user)
+        order = serializer.instance
+        if order.status == LabOrder.Status.DRAFT:
+            order.status = LabOrder.Status.SUBMITTED
+            order.save(update_fields=['status', 'updated_at'])
+        ConsultationEvent.objects.create(
+            admission=order.admission,
+            event_type="lab_order_created",
+            payload={
+                "order_id": order.id,
+                "priority": order.priority,
+                "items": order.order_items,
+            },
+            occurred_at=timezone.now(),
+            actor_name=self.request.user.get_full_name()
+            or self.request.user.username,
+            actor_role="Clinician",
+        )
+        ConsultationTask.objects.create(
+            admission=order.admission,
+            lab_order=order,
+            task_type=ConsultationTask.TaskType.RESULTS_READY,
+            target_role="lab",
+            message="New lab order submitted",
+            created_by=self.request.user,
+        )
 
 
 class CarePlanViewSet(viewsets.ModelViewSet):
@@ -524,6 +664,9 @@ class ConsultationTaskViewSet(viewsets.ModelViewSet):
         status_filter = self.request.query_params.get('status')
         if status_filter:
             queryset = queryset.filter(status=status_filter)
+        target_role = self.request.query_params.get('target_role')
+        if target_role:
+            queryset = queryset.filter(target_role__iexact=target_role)
         return queryset.order_by('-created_at', '-id')
 
     @action(detail=True, methods=['post'])
@@ -567,6 +710,10 @@ class ConsultationWorklistView(APIView):
             status = entry["status"]
             if filter_key == 'awaiting_consult' and status != "awaiting_consult":
                 continue
+            if filter_key == 'awaiting_consult':
+                # extra guard: if any lab result exists, don't keep it in awaiting_consult
+                if LabResult.objects.filter(admission=admission, is_archived=False).exists():
+                    continue
             if filter_key == 'results_to_review' and status != "results_available":
                 continue
             if filter_key == 'active' and status not in (
