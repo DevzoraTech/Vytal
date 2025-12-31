@@ -42,7 +42,17 @@ import {
 import type { CarePlan, ConsultationEvent } from "./modules/consultation/types";
 import { CARD_CLASS, CARD_SECTION_CLASS } from "./ui/styles";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "/api";
+const inferProdApiBase = () => {
+  if (typeof window === "undefined") return null;
+  const host = window.location.hostname;
+  if (host.endsWith("devzoratech.com")) {
+    return "https://vytal-zg8y.onrender.com/api";
+  }
+  return null;
+};
+
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL || inferProdApiBase() || "/api";
 const TOKEN_STORAGE_KEY = "vytal-token";
 const PATIENT_ID_PREFIX_KEY = "vytal-patient-id-prefix";
 const PATIENT_ID_COUNTER_KEY = "vytal-patient-id-counter";
