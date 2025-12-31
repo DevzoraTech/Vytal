@@ -39,8 +39,8 @@ ALLOWED_HOSTS = [
 
 CSRF_TRUSTED_ORIGINS = [
     "https://1f08b0e6a529.ngrok-free.app",
-    "https://vytal-3sqf.onrender.com",
-    "https://vytal-frontend.netlify.app",
+    "https://vytal-zg8y.onrender.com",
+    "https://vytal-hms.netlify.app",
     "https://vytal.devzoratech.com",
 ]
 
