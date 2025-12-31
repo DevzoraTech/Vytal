@@ -113,6 +113,10 @@ else:
             'PASSWORD': os.getenv('PGPASSWORD'),
             'HOST': os.getenv('PGHOST', 'localhost'),
             'PORT': os.getenv('PGPORT', '5432'),
+            # Enforce SSL when connecting to managed Postgres (e.g., Render/AWS RDS).
+            'OPTIONS': {
+                'sslmode': os.getenv('PGSSLMODE', 'require'),
+            },
         }
     }
 
