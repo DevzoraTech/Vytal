@@ -10,7 +10,7 @@ export default defineConfig({
     allowedHosts: ["67bb98ac25cd.ngrok-free.app"],
     proxy: {
       "/api": {
-        target: "http://127.0.0.1:8000", //target 
+        target: "https://vytal-zg8y.onrender.com", //target 
         changeOrigin: true,
       },
     },
