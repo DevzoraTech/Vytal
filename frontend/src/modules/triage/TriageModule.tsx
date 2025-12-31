@@ -12,8 +12,8 @@ interface TriageModuleProps {
   patients: TriagePatientEntry[];
   onFieldChange: (field: keyof TriageFormState, value: string) => void;
   onSave: () => void;
-  onEscalate: () => void;
-  onEdit: (patient: TriagePatientEntry) => void;
+  onEscalate?: () => void;
+  onEdit?: (patient: TriagePatientEntry) => void;
   errorMessage?: string | null;
   fetchError?: string | null;
 }
@@ -52,8 +52,8 @@ const TriageModule = ({
   patients,
   onFieldChange,
   onSave,
-  onEscalate,
-  onEdit,
+  onEscalate: _onEscalate,
+  onEdit: _onEdit,
   errorMessage,
   fetchError,
 }: TriageModuleProps) => {

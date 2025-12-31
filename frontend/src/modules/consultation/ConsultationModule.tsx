@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { User } from "../../types/auth";
 import {
   type CarePlan,
   type ConsultationEvent,
   type ConsultationFilter,
   type ConsultationTask,
-  type LabOrder,
   type LabResult,
   type WorklistEntry,
 } from "./types";
@@ -13,7 +11,6 @@ import {
 interface ConsultationModuleProps {
   apiBaseUrl: string;
   token: string | null;
-  user: User | null;
 }
 
 interface LabOrderFormState {
@@ -22,18 +19,6 @@ interface LabOrderFormState {
   clinicalQuestion: string;
   notesToLab: string;
   policyBypass: boolean;
-}
-
-interface CarePlanFormState {
-  assessment: string;
-  medications: string;
-  procedures: string;
-  monitoring: string;
-  patientInstructions: string;
-  escalation: string;
-  nextReviewAt: string;
-  note: string;
-  finalize: boolean;
 }
 
 interface ClinicalNote {
@@ -115,16 +100,23 @@ const exportToCsv = (filename: string, rows: Record<string, unknown>[]) => {
   URL.revokeObjectURL(url);
 };
 
-const ConsultationModule = ({ apiBaseUrl, token, user }: ConsultationModuleProps) => {
+const buildCarePlanRows = (plan: CarePlan): { label: string; value: string }[] => {
+  const items = plan.plan_items || {};
+  return Object.entries(items).map(([label, value]) => ({
+    label,
+    value:
+      Array.isArray(value) ? value.join(", ") : value !== undefined ? String(value) : "None",
+  }));
+};
+
+const ConsultationModule = ({ apiBaseUrl, token }: ConsultationModuleProps) => {
   const [filter, setFilter] = useState<ConsultationFilter>("awaiting_consult");
-  const [mineOnly, setMineOnly] = useState(false);
   const [loading, setLoading] = useState(false);
   const [worklistError, setWorklistError] = useState<string | null>(null);
   const [worklist, setWorklist] = useState<WorklistEntry[]>([]);
   const [selected, setSelected] = useState<WorklistEntry | null>(null);
 
   const [detailLoading, setDetailLoading] = useState(false);
-  const [orders, setOrders] = useState<LabOrder[]>([]);
   const [results, setResults] = useState<LabResult[]>([]);
   const [plans, setPlans] = useState<CarePlan[]>([]);
   const [clinicalNotes, setClinicalNotes] = useState<ClinicalNote[]>([]);
@@ -140,19 +132,6 @@ const ConsultationModule = ({ apiBaseUrl, token, user }: ConsultationModuleProps
     policyBypass: false,
   });
   const [savingOrder, setSavingOrder] = useState(false);
-
-  const [carePlanForm, setCarePlanForm] = useState<CarePlanFormState>({
-    assessment: "",
-    medications: "",
-    procedures: "",
-    monitoring: "",
-    patientInstructions: "",
-    escalation: "",
-    nextReviewAt: "",
-    note: "",
-    finalize: true,
-  });
-  const [savingPlan, setSavingPlan] = useState(false);
   const [showPlanHistory, setShowPlanHistory] = useState(false);
   const PAGE_SIZE = 10;
   const [page, setPage] = useState(1);
@@ -175,16 +154,13 @@ const ConsultationModule = ({ apiBaseUrl, token, user }: ConsultationModuleProps
     setExportOpen(false);
   };
 
-  const authHeaders = useMemo(
-    () =>
-      token
-        ? {
-            Authorization: `Token ${token}`,
-            "Content-Type": "application/json",
-          }
-        : { "Content-Type": "application/json" },
-    [token]
-  );
+  const authHeaders = useMemo<Record<string, string>>(() => {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) {
+      headers.Authorization = `Token ${token}`;
+    }
+    return headers;
+  }, [token]);
 
   const fetchJson = useCallback(
     async (url: string, init?: RequestInit) => {
@@ -208,9 +184,8 @@ const ConsultationModule = ({ apiBaseUrl, token, user }: ConsultationModuleProps
     setLoading(true);
     setWorklistError(null);
     try {
-      const mineParam = mineOnly ? "&mine=true" : "";
       const data: WorklistEntry[] = await fetchJson(
-        `${apiBaseUrl}/consultation/worklist/?filter=${filter}${mineParam}`
+        `${apiBaseUrl}/consultation/worklist/?filter=${filter}`
       );
       setWorklist(data);
       setPage(1);
@@ -226,7 +201,7 @@ const ConsultationModule = ({ apiBaseUrl, token, user }: ConsultationModuleProps
     } finally {
       setLoading(false);
     }
-  }, [apiBaseUrl, fetchJson, filter, mineOnly, token]);
+  }, [apiBaseUrl, fetchJson, filter, token]);
 
   const loadDetails = useCallback(
     async (entry: WorklistEntry) => {
@@ -236,7 +211,7 @@ const ConsultationModule = ({ apiBaseUrl, token, user }: ConsultationModuleProps
       setDetailLoading(true);
       setDetailError(null);
       try {
-        const [ordersResp, plansResp, tasksResp, eventsResp, resultsResp, notesResp] =
+        const [_ordersResp, plansResp, tasksResp, eventsResp, resultsResp, notesResp] =
           await Promise.all([
             fetchJson(
               `${apiBaseUrl}/consultation/lab-orders/?admission=${entry.admission_id}`
@@ -257,7 +232,6 @@ const ConsultationModule = ({ apiBaseUrl, token, user }: ConsultationModuleProps
           Array.isArray(resp)
             ? resp
             : (resp as { results?: unknown[] })?.results || [];
-        const ordersList = normalize(ordersResp) as LabOrder[];
         const plansList = normalize(plansResp) as CarePlan[];
         const tasksList = normalize(tasksResp) as ConsultationTask[];
         const eventsList = normalize(eventsResp) as ConsultationEvent[];
@@ -269,7 +243,6 @@ const ConsultationModule = ({ apiBaseUrl, token, user }: ConsultationModuleProps
           if (role.includes("triage")) return false;
           return true;
         });
-        setOrders(ordersList);
         setPlans(plansList);
         setTasks(tasksList);
         setEvents(eventsList);
@@ -304,10 +277,6 @@ const ConsultationModule = ({ apiBaseUrl, token, user }: ConsultationModuleProps
     // Clear selection when switching filters/tabs to avoid auto-opening drawer
     setSelected(null);
   }, [filter]);
-
-  useEffect(() => {
-    setSelected(null);
-  }, [mineOnly]);
 
   useEffect(() => {
     if (selected && !worklist.find((w) => w.admission_id === selected.admission_id)) {
@@ -353,51 +322,6 @@ const ConsultationModule = ({ apiBaseUrl, token, user }: ConsultationModuleProps
     }
   };
 
-  const handleSaveCarePlan = async () => {
-    if (!selected) return;
-    setSavingPlan(true);
-    setDetailError(null);
-    const planItems = {
-      medications: carePlanForm.medications,
-      procedures: carePlanForm.procedures,
-      monitoring: carePlanForm.monitoring,
-      patient_instructions: carePlanForm.patientInstructions,
-      escalation: carePlanForm.escalation,
-    };
-    const payload = {
-      admission: selected.admission_id,
-      assessment: carePlanForm.assessment,
-      plan_items: planItems,
-      next_review_at: carePlanForm.nextReviewAt || null,
-      escalation_criteria: carePlanForm.escalation,
-      note: carePlanForm.note,
-      status: carePlanForm.finalize ? "finalized" : "draft",
-    };
-    try {
-      await fetchJson(`${apiBaseUrl}/consultation/care-plans/`, {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
-      setCarePlanForm((prev) => ({
-        ...prev,
-        assessment: "",
-        medications: "",
-        procedures: "",
-        monitoring: "",
-        patientInstructions: "",
-        escalation: "",
-        note: "",
-      }));
-      await Promise.all([loadDetails(selected), loadWorklist()]);
-    } catch (error) {
-      setDetailError(
-        error instanceof Error ? error.message : "Unable to save care plan."
-      );
-    } finally {
-      setSavingPlan(false);
-    }
-  };
-
   const handleAcknowledgeTask = async (taskId: number) => {
     try {
       await fetchJson(`${apiBaseUrl}/consultation/tasks/${taskId}/acknowledge/`, {
@@ -418,6 +342,9 @@ const ConsultationModule = ({ apiBaseUrl, token, user }: ConsultationModuleProps
 
   const renderDetailDrawer = () => {
     if (!selected) return null;
+    const current = selected;
+    const plan = latestPlan;
+    const result = latestResult;
     return (
       <>
         <div
@@ -430,7 +357,7 @@ const ConsultationModule = ({ apiBaseUrl, token, user }: ConsultationModuleProps
             <div>
               <p className="text-xs uppercase tracking-wide text-slate-500">Records</p>
               <h3 className="text-lg font-semibold text-slate-900">
-                {selected.patient_name} ({formatPatientIdentifier(selected.patient_id)})
+                {current.patient_name} ({formatPatientIdentifier(current.patient_id)})
               </h3>
             </div>
             <button
@@ -451,19 +378,19 @@ const ConsultationModule = ({ apiBaseUrl, token, user }: ConsultationModuleProps
                   <div className="flex flex-wrap gap-2">
                     <span
                       className={`rounded-full px-3 py-1 text-xs font-semibold ${badgeClass(
-                        selected.status
+                        current.status
                       )}`}
                     >
-                      {selected.status.replace("_", " ")}
+                      {current.status.replace("_", " ")}
                     </span>
-                    {latestPlan && (
+                    {plan && (
                       <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-                        Plan v{latestPlan.version} ({latestPlan.status})
+                        Plan v{plan.version} ({plan.status})
                       </span>
                     )}
-                    {latestResult && (
+                    {result && (
                       <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-                        Result {formatDateTime(latestResult.recorded_at)}
+                        Result {formatDateTime(result.recorded_at)}
                       </span>
                     )}
                   </div>
@@ -729,7 +656,7 @@ const ConsultationModule = ({ apiBaseUrl, token, user }: ConsultationModuleProps
                     </h3>
                   </div>
                   <span className="text-xs text-slate-500">
-                    {selected.patient_name}
+                    {current.patient_name}
                   </span>
                 </div>
                 <div className="space-y-3 text-sm">
@@ -1113,397 +1040,6 @@ const ConsultationModule = ({ apiBaseUrl, token, user }: ConsultationModuleProps
           </div>
         )}
 
-        {false && selected && (
-          <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <div className="lg:col-span-2 space-y-4">
-              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-slate-500">
-                      Records
-                    </p>
-                    <h3 className="text-lg font-medium text-slate-900">
-                      {selected.patient_name}({formatPatientIdentifier(selected.patient_id)})
-                    </h3>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-semibold ${badgeClass(
-                        selected.status
-                      )}`}
-                    >
-                      {selected.status.replace("_", " ")}
-                    </span>
-                    {latestPlan && (
-                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-                        Plan v{latestPlan.version} ({latestPlan.status})
-                      </span>
-                    )}
-                    {latestResult && (
-                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-                        Result {formatDateTime(latestResult.recorded_at)}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                {detailError && (
-                  <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                    {detailError}
-                  </div>
-                )}
-                {detailLoading ? (
-                  <div className="mt-4 text-sm text-slate-600">Loading encounter…</div>
-                ) : (
-                  <div className="mt-4 grid gap-4 lg:grid-cols-2">
-                    <div className="space-y-3">
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <p className="text-xs uppercase tracking-wide text-slate-500">
-                          Tasks
-                        </p>
-                        {tasks.length === 0 ? (
-                          <p className="text-sm text-slate-600">No open tasks.</p>
-                        ) : (
-                          <ul className="mt-2 space-y-2 text-sm">
-                            {tasks.map((task) => (
-                              <li
-                                key={task.id}
-                                className="flex items-center justify-between rounded-lg bg-white px-3 py-2 text-slate-700 shadow-sm"
-                              >
-                                <div>
-                                  <div className="font-semibold">{task.task_type.replace("_", " ")}</div>
-                                  <div className="text-xs text-slate-500">
-                                    {task.message || "Action required"}
-                                  </div>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => handleAcknowledgeTask(task.id)}
-                                  className="rounded-full bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
-                                >
-                                  Acknowledge
-                                </button>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-
-                      <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="text-xs uppercase tracking-wide text-slate-500">
-                              Lab orders
-                            </p>
-                            <p className="text-sm text-slate-600">
-                              {orders.length} order{orders.length === 1 ? "" : "s"}
-                            </p>
-                          </div>
-                        </div>
-                        <ul className="mt-3 space-y-2 text-sm text-slate-700">
-                          {orders.length === 0 ? (
-                            <li className="text-slate-500">No lab orders yet.</li>
-                          ) : (
-                            orders.map((order) => (
-                              <li
-                                key={order.id}
-                                className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2"
-                              >
-                                <div className="flex items-center justify-between">
-                                  <div className="font-semibold">
-                                    {order.order_items.join(", ") || "Order"}
-                                  </div>
-                                  <span className="text-xs text-slate-500">
-                                    {order.priority} · {order.status}
-                                  </span>
-                                </div>
-                                <div className="text-xs text-slate-500">
-                                  {order.clinical_question || order.notes_to_lab || "No notes"}
-                                </div>
-                                <div className="text-[11px] text-slate-400">
-                                  Created {formatDateTime(order.created_at)}
-                                </div>
-                              </li>
-                            ))
-                          )}
-                        </ul>
-                      </div>
-                    </div>
-
-                    <div className="space-y-3">
-                      <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-                        <p className="text-xs uppercase tracking-wide text-slate-500">
-                          Recent lab results
-                        </p>
-                        <ul className="mt-3 space-y-2 text-sm text-slate-700">
-                          {results.length === 0 ? (
-                            <li className="text-slate-500">No lab results.</li>
-                          ) : (
-                            results.slice(0, 5).map((result) => (
-                              <li
-                                key={result.id}
-                                className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2"
-                              >
-                                <div className="flex items-center justify-between">
-                                  <div className="font-semibold">{result.test_type}</div>
-                                  <span className="text-xs text-slate-500">
-                                    {formatDateTime(result.recorded_at)}
-                                  </span>
-                                </div>
-                                <div className="text-xs text-slate-500">{result.summary}</div>
-                                <div className="text-[11px] text-slate-400">
-                                  By {result.recorded_by_name} ({result.recorded_by_role || "Laboratory"})
-                                </div>
-                              </li>
-                            ))
-                          )}
-                        </ul>
-                      </div>
-
-                      <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-                        <p className="text-xs uppercase tracking-wide text-slate-500">
-                          Treatment records
-                        </p>
-                        {clinicalNotes.length === 0 ? (
-                          <p className="mt-3 text-sm text-slate-500">
-                            No documented treatment records yet.
-                          </p>
-                        ) : (
-                          <>
-                            {(() => {
-                              const latestNote = clinicalNotes[0];
-                              return (
-                                <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
-                                  <div className="grid grid-cols-3 gap-3 text-[12px] text-slate-700">
-                                    <div>
-                                      <p className="text-[11px] uppercase tracking-wide text-slate-400">
-                                        Treatment
-                                      </p>
-                                      <p className="font-semibold text-slate-900">
-                                        {formatOrNone(
-                                          latestNote.treatment_details ||
-                                            latestNote.assessment ||
-                                            latestNote.note
-                                        )}
-                                      </p>
-                                    </div>
-                                    <div>
-                                      <p className="text-[11px] uppercase tracking-wide text-slate-400">
-                                        Route
-                                      </p>
-                                      <p>{formatOrNone(latestNote.treatment_route)}</p>
-                                    </div>
-                                    <div>
-                                      <p className="text-[11px] uppercase tracking-wide text-slate-400">
-                                        Complaints
-                                      </p>
-                                      <p>{formatOrNone(latestNote.complaints)}</p>
-                                    </div>
-                                    <div>
-                                      <p className="text-[11px] uppercase tracking-wide text-slate-400">
-                                        Next review
-                                      </p>
-                                      <p>
-                                        {formatOrNone(
-                                          `${latestNote.next_review_date || latestNote.next_treatment_date || "None"}${
-                                            latestNote.next_treatment_time
-                                              ? ` ${latestNote.next_treatment_time}`
-                                              : ""
-                                          }`
-                                        )}
-                                      </p>
-                                    </div>
-                                    <div>
-                                      <p className="text-[11px] uppercase tracking-wide text-slate-400">
-                                        BP (mmHg)
-                                      </p>
-                                      <p>
-                                        {latestNote.systolic_bp || latestNote.diastolic_bp
-                                          ? `${formatOrNone(latestNote.systolic_bp)}/${formatOrNone(
-                                              latestNote.diastolic_bp
-                                            )}`
-                                          : "None"}
-                                      </p>
-                                    </div>
-                                    <div>
-                                      <p className="text-[11px] uppercase tracking-wide text-slate-400">
-                                        Pulse (bpm)
-                                      </p>
-                                      <p>{formatOrNone(latestNote.pulse)}</p>
-                                    </div>
-                                    <div>
-                                      <p className="text-[11px] uppercase tracking-wide text-slate-400">
-                                        Resp. (cpm)
-                                      </p>
-                                      <p>{formatOrNone(latestNote.respiration_rate)}</p>
-                                    </div>
-                                    <div>
-                                      <p className="text-[11px] uppercase tracking-wide text-slate-400">
-                                        Temp (°C)
-                                      </p>
-                                      <p>{formatOrNone(latestNote.temperature_c)}</p>
-                                    </div>
-                                    <div>
-                                      <p className="text-[11px] uppercase tracking-wide text-slate-400">
-                                        SpO₂ (%)
-                                      </p>
-                                      <p>{formatOrNone(latestNote.oxygen_saturation)}</p>
-                                    </div>
-                                    <div className="col-span-3">
-                                      <p className="text-[11px] uppercase tracking-wide text-slate-400">
-                                        Remarks
-                                      </p>
-                                      <p>{formatOrNone(latestNote.remarks)}</p>
-                                    </div>
-                                  </div>
-                                   <div className="text-[11px] text-slate-500">
-                                      Recorded by: {latestNote.recorded_by_name || "None"}({latestNote.recorded_by_role || "None"}) ·
-                                      {latestNote.documented_at
-                                      ? formatDateTime(latestNote.documented_at)
-                                      : latestNote.created_at
-                                      ? formatDateTime(latestNote.created_at)
-                                      : "None"}
-                        
-                      </div>
-                                </div>
-                              );
-                            })()}
-                            {clinicalNotes.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => setShowPlanHistory(true)}
-                                className="mt-3 w-full rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                              >
-                                View all treatment records
-                              </button>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-slate-500">
-                      Timeline
-                    </p>
-                    <h3 className="text-lg font-semibold text-slate-900">Recent activity</h3>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => selected && loadDetails(selected)}
-                    className="rounded-full border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                  >
-                    Refresh
-                  </button>
-                </div>
-                <ul className="mt-3 space-y-2 text-sm text-slate-700">
-                  {events.length === 0 ? (
-                    <li className="text-slate-500">No events yet.</li>
-                  ) : (
-                    events.slice(0, 8).map((event) => (
-                      <li
-                        key={event.id}
-                        className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="font-semibold">{event.event_type.replace("_", " ")}</div>
-                          <span className="text-xs text-slate-500">
-                            {formatDateTime(event.occurred_at)}
-                          </span>
-                        </div>
-                        <div className="text-xs text-slate-500">
-                          {event.actor_name || "System"} · {event.actor_role || "—"}
-                        </div>
-                      </li>
-                    ))
-                  )}
-                </ul>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="mb-3 flex items-center justify-between">
-                  <div>
-                    <h3 className="text-lg font-medium text-slate-900">
-                      Add lab order
-                    </h3>
-                  </div>
-                  <span className="text-xs text-slate-500">
-                    {selected.patient_name}
-                  </span>
-                </div>
-                <div className="space-y-3 text-sm">
-                  <div>
-                    <label className="text-xs font-semibold text-slate-600">
-                      Order items (comma separated)
-                    </label>
-                    <input
-                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
-                      value={labOrderForm.orderItemsText}
-                      onChange={(event) =>
-                        setLabOrderForm((prev) => ({
-                          ...prev,
-                          orderItemsText: event.target.value,
-                        }))
-                      }
-                      placeholder="CBC, LFT, Malaria RDT ..."
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-xs font-semibold text-slate-600">
-                        Priority
-                      </label>
-                      <select
-                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
-                        value={labOrderForm.priority}
-                        onChange={(event) =>
-                          setLabOrderForm((prev) => ({
-                            ...prev,
-                            priority: event.target.value as LabOrderFormState["priority"],
-                          }))
-                        }
-                      >
-                        <option value="routine">Routine</option>
-                        <option value="urgent">Urgent</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-slate-600">
-                      Notes to lab
-                    </label>
-                    <textarea
-                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
-                      rows={2}
-                      value={labOrderForm.notesToLab}
-                      onChange={(event) =>
-                        setLabOrderForm((prev) => ({
-                          ...prev,
-                          notesToLab: event.target.value,
-                        }))
-                      }
-                      placeholder="Add a note for the lab attendant..."
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleCreateLabOrder}
-                    disabled={savingOrder}
-                    className="w-full rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
-                  >
-                    {savingOrder ? "Saving..." : "Submit lab order"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </section>
-        )}
         {renderDetailDrawer()}
       </div>
     </main>

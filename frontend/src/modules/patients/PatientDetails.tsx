@@ -7,14 +7,11 @@ import {
   type Patient,
   type PatientDirectoryTab,
   type PatientTab,
+  type LabResultEntry,
   type TreatmentFormState,
   type TreatmentPlanEntry,
 } from "./types";
-import {
-  categorizePatientStatus,
-  getLatestAdmission,
-  isLabNote,
-} from "./utils";
+import { categorizePatientStatus, getLatestAdmission } from "./utils";
 import type { CarePlan } from "../consultation/types";
 
 interface PatientDetailsProps {
@@ -83,15 +80,6 @@ const PatientDetails = ({
       </section>
     );
   }
-    if (!selectedPatient) {
-      return (
-        <section className="rounded-3xl border border-dashed border-slate-200 bg-white/60 p-10 text-center text-sm text-slate-500 shadow-sm">
-          {loading
-            ? "Loading patients…"
-            : "Select a patient from the directory to view details."}
-        </section>
-      );
-    }
     const initials = `${selectedPatient.first_name[0] ?? ""}${
       selectedPatient.last_name[0] ?? ""
     }`;
