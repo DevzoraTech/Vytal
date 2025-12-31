@@ -33,6 +33,7 @@ ALLOWED_HOSTS = [
     "localhost",
     "127.0.0.1",
     "vytal-3sqf.onrender.com",
+    "vytal-zg8y.onrender.com",
     "vytal.devzoratech.com",
     ".ngrok-free.app",
 ]
