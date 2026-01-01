@@ -3533,48 +3533,6 @@ function App() {
                   </div>
                 )}
               </div>
-              <div className="space-y-2 rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-3 text-sm text-slate-600">
-                <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-500">
-                  <span>Schedule next review (optional)</span>
-                </div>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-500">
-                      Review date
-                    </label>
-                    <input
-                      type="date"
-                      className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-                      value={treatmentNoteForm.nextTreatmentDate}
-                      onChange={(event) =>
-                        setTreatmentNoteForm((prev) => ({
-                          ...prev,
-                          nextTreatmentDate: event.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-500">
-                      Review time
-                    </label>
-                    <input
-                      type="time"
-                      className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-                      value={treatmentNoteForm.nextTreatmentTime}
-                      onChange={(event) =>
-                        setTreatmentNoteForm((prev) => ({
-                          ...prev,
-                          nextTreatmentTime: event.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                </div>
-                <p className="text-xs text-slate-500">
-                  Leave blank if this visit does not schedule a new review.
-                </p>
-              </div>
               <div className="flex flex-wrap gap-3 pt-2">
                 <button
                   type="submit"
