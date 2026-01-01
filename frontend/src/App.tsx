@@ -471,7 +471,7 @@ function App() {
   const [carePlanSchedule, setCarePlanSchedule] = useState<ScheduleItem[]>([]);
   const [scheduleManagerOpen, setScheduleManagerOpen] = useState(false);
   const [scheduleManagerPlanId, setScheduleManagerPlanId] = useState<number | null>(null);
-  const [scheduleManagerItems, setScheduleManagerItems] = useState<ScheduleItem[]>([]);
+  const [scheduleManagerItems, setScheduleManagerItems] = useState<(ScheduleItem & { locked?: boolean })[]>([]);
   const [scheduleManagerLoading, setScheduleManagerLoading] = useState(false);
   type TriageApiEntry = {
     id: number;
@@ -2306,7 +2306,12 @@ function App() {
       if (res.ok) {
         const plan = await res.json();
         const items = (plan.plan_items?.treatment_schedule || []) as ScheduleItem[];
-        setScheduleManagerItems(items);
+        // correct: map items and set locked if status is completed
+        const itemsWithLock = items.map(i => ({
+          ...i,
+          locked: i.status === 'completed'
+        }));
+        setScheduleManagerItems(itemsWithLock);
       }
     } catch (e) {
       console.error(e);
@@ -2392,12 +2397,14 @@ function App() {
                       <input
                         type="checkbox"
                         checked={isDone}
+                        disabled={item.locked}
                         onChange={() => {
+                          if (item.locked) return;
                           const newItems = [...scheduleManagerItems];
                           newItems[index] = { ...item, status: isDone ? "pending" : "completed" };
                           setScheduleManagerItems(newItems);
                         }}
-                        className="h-5 w-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        className={`h-5 w-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 ${item.locked ? 'cursor-not-allowed opacity-50' : ''}`}
                       />
                     </div>
                     <div className="flex-1">
@@ -2466,15 +2473,33 @@ function App() {
     return (
       <section className={`${CARD_SECTION_CLASS} space-y-6`}>
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
+          <div className="flex-1 min-w-[300px]">
             <h2 className="text-2xl font-semibold text-[#111827]">
               Clinicians Worklist
             </h2>
-
             <p className="text-sm text-[#4B5563]">
               Review lab results, record treaments and set Patients review schedules.
             </p>
           </div>
+
+          <div className="flex-1 flex items-center justify-center max-w-md">
+            <div className="relative w-full">
+              <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+              </span>
+              <input
+                type="text"
+                placeholder="Search patients by name or phone..."
+                className="w-full rounded-full border border-gray-200 bg-white py-2 pl-10 pr-4 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+          </div>
+
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -2580,9 +2605,19 @@ function App() {
                                 e.stopPropagation();
                                 handleOpenScheduleManager(patient, patient.next_treatment!);
                               }}
-                              className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-600 hover:bg-blue-100"
+                              className="rounded-full bg-slate-900 px-3 py-1 text-xs font-bold text-white hover:bg-slate-800"
                             >
                               Record
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedPatientId(patient.id);
+                                handleOpenClinicalForm(patient);
+                              }}
+                              className="rounded-full bg-slate-900 px-3 py-1 text-xs font-bold text-white hover:bg-slate-800"
+                            >
+                              Adjust Plan
                             </button>
                           </div>
                         ) : (
@@ -3451,7 +3486,7 @@ function App() {
                     <button
                       type="button"
                       onClick={handleGenerateSchedule}
-                      className="rounded-xl bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+                      className="rounded-xl bg-slate-900 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-800"
                     >
                       Update
                     </button>
@@ -3543,7 +3578,7 @@ function App() {
               <div className="flex flex-wrap gap-3 pt-2">
                 <button
                   type="submit"
-                  className="rounded-full bg-[#008000] px-5 py-2 text-sm font-semibold text-white shadow-subtle disabled:opacity-60 hover:bg-[#008000]"
+                  className="rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white shadow-subtle disabled:opacity-60 hover:bg-slate-800"
                   disabled={treatmentNoteSubmitting}
                 >
                   {treatmentNoteSubmitting
@@ -4255,8 +4290,37 @@ function App() {
     }
   };
 
-  const handleOpenClinicalForm = () => {
-    if (!selectedPatient) {
+  const handleOpenClinicalForm = async (p?: Patient) => {
+    if (p) {
+      setSelectedPatientId(p.id);
+
+      // Pre-fill care plan data if it exists
+      if (p.next_treatment?.care_plan_id) {
+        try {
+          const res = await fetch(`${API_BASE_URL}/consultation/care-plans/${p.next_treatment.care_plan_id}/`, {
+            headers: { Authorization: `Token ${token}` }
+          });
+          if (res.ok) {
+            const plan = await res.json();
+            const schedule = (plan.plan_items?.treatment_schedule || []) as ScheduleItem[];
+            setCarePlanSchedule(schedule);
+            setCarePlanNumDays(schedule.length);
+          }
+        } catch (e) {
+          console.error("Error pre-filling care plan:", e);
+        }
+      } else {
+        // Reset for new plan
+        setCarePlanSchedule([]);
+        setCarePlanNumDays(0);
+      }
+    } else {
+      setCarePlanSchedule([]);
+      setCarePlanNumDays(0);
+    }
+
+    const currentPatient = p || selectedPatient;
+    if (!currentPatient) {
       setTreatmentNoteError("Select a patient to document a care plan.");
       return;
     }
