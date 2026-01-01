@@ -272,23 +272,32 @@ const NAV_SECTIONS: {
   title: string;
   items: { key: ModuleKey; label: string; icon: NavIcon }[];
 }[] = [
-  {
-    title: "Workspace",
-    items: [
-      { key: "dashboard", label: "Dashboard", icon: DashboardIcon },
-      { key: "triage", label: "Triage", icon: TriageIcon },
-      { key: "patients", label: "Clinician", icon: PatientsIcon },
-      { key: "consultation", label: "Consultation", icon: ConsultationIcon },
-      { key: "appointments", label: "Appointments", icon: CalendarIcon },
-      { key: "billing", label: "Finance", icon: BillingIcon },
-      { key: "pharmacy", label: "Pharmacy", icon: PharmacyIcon },
-      { key: "laboratory", label: "Laboratory", icon: LabIcon },
-      { key: "inventory", label: "Inventory", icon: InventoryIcon },
-      { key: "reports", label: "Reports", icon: ReportsIcon },
-      { key: "support", label: "Support", icon: SupportIcon },
-    ],
-  },
-];
+    {
+      title: "Workspace",
+      items: [
+        { key: "dashboard", label: "Dashboard", icon: DashboardIcon },
+        { key: "triage", label: "Triage", icon: TriageIcon },
+        { key: "patients", label: "Clinician", icon: PatientsIcon },
+        { key: "consultation", label: "Consultation", icon: ConsultationIcon },
+        { key: "appointments", label: "Appointments", icon: CalendarIcon },
+        { key: "billing", label: "Finance", icon: BillingIcon },
+        { key: "pharmacy", label: "Pharmacy", icon: PharmacyIcon },
+        { key: "laboratory", label: "Laboratory", icon: LabIcon },
+        { key: "inventory", label: "Inventory", icon: InventoryIcon },
+        { key: "reports", label: "Reports", icon: ReportsIcon },
+        { key: "support", label: "Support", icon: SupportIcon },
+      ],
+    },
+  ];
+
+
+interface ScheduleItem {
+  day_number: number;
+  date: string;
+  time: string;
+  duration: string;
+  activity: string;
+}
 
 function App() {
   const [token, setToken] = useState<string | null>(() =>
@@ -457,6 +466,8 @@ function App() {
     >
   >({});
   const [triageSaveError, setTriageSaveError] = useState<string | null>(null);
+  const [carePlanNumDays, setCarePlanNumDays] = useState<number>(0);
+  const [carePlanSchedule, setCarePlanSchedule] = useState<ScheduleItem[]>([]);
   type TriageApiEntry = {
     id: number;
     full_name: string;
@@ -519,8 +530,8 @@ function App() {
       const entries = Array.isArray(raw)
         ? raw
         : Array.isArray((raw as any).results)
-        ? (raw as any).results
-        : [];
+          ? (raw as any).results
+          : [];
       setTriagePatients(entries.map(mapTriageEntry));
       setTriageFetchError(null);
     } catch (err) {
@@ -781,8 +792,7 @@ function App() {
       setError(null);
       try {
         const response = await fetch(
-          `${API_BASE_URL}/patients/${
-            term ? `?q=${encodeURIComponent(term)}` : ""
+          `${API_BASE_URL}/patients/${term ? `?q=${encodeURIComponent(term)}` : ""
           }`,
           {
             headers: { Authorization: `Token ${token}` },
@@ -833,8 +843,8 @@ function App() {
       const payload = Array.isArray(raw)
         ? raw
         : Array.isArray((raw as any).results)
-        ? (raw as any).results
-        : [];
+          ? (raw as any).results
+          : [];
       const entries: LabQueueEntry[] = payload.map((entry: any) => {
         const rawIdentifier =
           entry.patient_identifier ||
@@ -885,8 +895,8 @@ function App() {
       const payload = Array.isArray(raw)
         ? raw
         : Array.isArray((raw as any).results)
-        ? (raw as any).results
-        : [];
+          ? (raw as any).results
+          : [];
       setLabRecords(
         payload.map((entry: any) => ({
           id: entry.id,
@@ -927,8 +937,8 @@ function App() {
       const payload = Array.isArray(raw)
         ? raw
         : Array.isArray((raw as any).results)
-        ? (raw as any).results
-        : [];
+          ? (raw as any).results
+          : [];
       setLabOrders(
         payload.map((order: any) => ({
           id: order.id,
@@ -976,8 +986,8 @@ function App() {
       const payload = Array.isArray(raw)
         ? raw
         : Array.isArray((raw as any).results)
-        ? (raw as any).results
-        : [];
+          ? (raw as any).results
+          : [];
       setLabTasks(
         payload.map((task: any) => ({
           id: task.id,
@@ -1111,8 +1121,8 @@ function App() {
         const payload = Array.isArray(raw)
           ? raw
           : Array.isArray(raw.results)
-          ? raw.results
-          : [];
+            ? raw.results
+            : [];
         setCarePlans(payload);
       } catch (error) {
         console.error(error);
@@ -1132,8 +1142,8 @@ function App() {
         const payload = Array.isArray(raw)
           ? raw
           : Array.isArray(raw.results)
-          ? raw.results
-          : [];
+            ? raw.results
+            : [];
         setPatientEvents(payload);
       } catch (error) {
         console.error(error);
@@ -1153,23 +1163,23 @@ function App() {
         const payload = Array.isArray(raw)
           ? raw
           : Array.isArray(raw.results)
-          ? raw.results
-          : [];
-      setPatientLabResults(
-        payload.map((result: any) => ({
-          id: result.id,
-          admission: result.admission,
-          patient: result.patient,
-          patient_identifier: result.patient_identifier ?? null,
-          patient_name: result.patient_name ?? null,
-          test_type: result.test_type,
-          summary: result.summary,
-          recorded_at: result.recorded_at,
-          recorded_by_name: result.recorded_by_name,
-          recorded_by_role: result.recorded_by_role,
-          status: result.status,
-        }))
-      );
+            ? raw.results
+            : [];
+        setPatientLabResults(
+          payload.map((result: any) => ({
+            id: result.id,
+            admission: result.admission,
+            patient: result.patient,
+            patient_identifier: result.patient_identifier ?? null,
+            patient_name: result.patient_name ?? null,
+            test_type: result.test_type,
+            summary: result.summary,
+            recorded_at: result.recorded_at,
+            recorded_by_name: result.recorded_by_name,
+            recorded_by_role: result.recorded_by_role,
+            status: result.status,
+          }))
+        );
       } catch (error) {
         console.error(error);
         setPatientLabResults([]);
@@ -2054,7 +2064,7 @@ function App() {
     }
   };
 
-const renderLogin = () => (
+  const renderLogin = () => (
     <div className="relative flex min-h-screen items-center justify-center bg-slate-100 px-4">
       <div className="w-full max-w-xl rounded-3xl border border-slate-200 bg-white/95 p-10 shadow-[0_30px_80px_rgba(15,23,42,0.12)] backdrop-blur">
         <div className="mb-6 flex items-center justify-between">
@@ -2166,16 +2176,14 @@ const renderLogin = () => (
 
   const renderSidebar = () => (
     <aside
-      className={`hidden shrink-0 bg-[#111827] px-3 py-6 text-neutral-200 transition-all duration-200 ${
-        sidebarCollapsed ? "w-20" : "w-72"
-      } xl:block`}
+      className={`hidden shrink-0 bg-[#111827] px-3 py-6 text-neutral-200 transition-all duration-200 ${sidebarCollapsed ? "w-20" : "w-72"
+        } xl:block`}
       onMouseEnter={() => setSidebarCollapsed(false)}
       onMouseLeave={() => setSidebarCollapsed(true)}
     >
       <div
-        className={`flex items-center rounded-lg bg-[#1F2937] px-3 py-4 ${
-          sidebarCollapsed ? "justify-center" : "gap-3"
-        }`}
+        className={`flex items-center rounded-lg bg-[#1F2937] px-3 py-4 ${sidebarCollapsed ? "justify-center" : "gap-3"
+          }`}
       >
         <img
           src="/vytallogo.png"
@@ -2207,11 +2215,10 @@ const renderLogin = () => (
                   return (
                     <button
                       key={item.key}
-                      className={`relative flex w-full items-center gap-3 rounded-lg px-5 py-2 text-left font-medium transition ${
-                        isActive
-                          ? "bg-[rgba(37,99,235,0.15)] text-white"
-                          : "text-neutral-400 hover:bg-[#1F2937] hover:text-white"
-                      }`}
+                      className={`relative flex w-full items-center gap-3 rounded-lg px-5 py-2 text-left font-medium transition ${isActive
+                        ? "bg-[rgba(37,99,235,0.15)] text-white"
+                        : "text-neutral-400 hover:bg-[#1F2937] hover:text-white"
+                        }`}
                       title={item.label}
                       onClick={() => setActiveModule(item.key)}
                     >
@@ -2268,12 +2275,12 @@ const renderLogin = () => (
               alt="User profile"
               className="h-9 w-9 rounded-full border border-[#E5E7EB] object-cover"
             />
-              <div>
-                <p className="text-sm font-semibold text-[#111827]">
-                  {user?.first_name} {user?.last_name}
-                </p>
-                <p className="text-xs text-[#4B5563]">{user?.username}</p>
-              </div>
+            <div>
+              <p className="text-sm font-semibold text-[#111827]">
+                {user?.first_name} {user?.last_name}
+              </p>
+              <p className="text-xs text-[#4B5563]">{user?.username}</p>
+            </div>
           </div>
         </div>
       </div>
@@ -2342,11 +2349,10 @@ const renderLogin = () => (
               key={tab}
               type="button"
               onClick={() => setPatientDirectoryTab(tab)}
-              className={`rounded-full px-4 py-2 transition ${
-                patientDirectoryTab === tab
-                  ? "bg-[#008000] text-white shadow-subtle"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-              }`}
+              className={`rounded-full px-4 py-2 transition ${patientDirectoryTab === tab
+                ? "bg-[#008000] text-white shadow-subtle"
+                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
             >
               {tab}
               <span className="ml-2 rounded-full bg-white/80 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
@@ -2395,16 +2401,15 @@ const renderLogin = () => (
                         setSelectedPatientId(patient.id);
                         setPatientSubPage("Patient Details");
                       }}
-                      className={`cursor-pointer border-t border-[#E5E7EB] text-sm transition ${
-                        active ? "bg-[#F8FAFF] shadow-inner" : index % 2 === 0 ? "bg-white" : "bg-[#F9FAFB]"
-                      } hover:bg-[#EAF2FF]`}
+                      className={`cursor-pointer border-t border-[#E5E7EB] text-sm transition ${active ? "bg-[#F8FAFF] shadow-inner" : index % 2 === 0 ? "bg-white" : "bg-[#F9FAFB]"
+                        } hover:bg-[#EAF2FF]`}
                     >
                       <td className="px-4 py-3 font-medium text-[#111827]">
                         {patient.patient_identifier || "?"}
                       </td>
                       <td className="px-4 py-3 font-medium text-[#111827]">
                         <div className="text-xs font-medium text-[#000033]">
-                        {patient.first_name} {patient.last_name}
+                          {patient.first_name} {patient.last_name}
                         </div>
                       </td>
                       <td className="px-4 py-3">{patient.age}</td>
@@ -2423,13 +2428,12 @@ const renderLogin = () => (
                       </td>
                       <td className="px-4 py-3">
                         <span
-                          className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
-                            stage === "Lab_done"
-                              ? "bg-yellow-50 text-yellow-700"
-                              : stage === "In Treatment"
+                          className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${stage === "Lab_done"
+                            ? "bg-yellow-50 text-yellow-700"
+                            : stage === "In Treatment"
                               ? "bg-blue-50 text-blue-700"
                               : "bg-gray-100 text-gray-700"
-                          }`}
+                            }`}
                         >
                           {stage}
                         </span>
@@ -2500,9 +2504,8 @@ const renderLogin = () => (
         </section>
       );
     }
-    const initials = `${selectedPatient.first_name[0] ?? ""}${
-      selectedPatient.last_name[0] ?? ""
-    }`;
+    const initials = `${selectedPatient.first_name[0] ?? ""}${selectedPatient.last_name[0] ?? ""
+      }`;
     const patientStage = categorizePatientStatus(selectedPatient);
     const latestAdmission = getLatestAdmission(selectedPatient);
     const isDischarged = patientStage === "Discharged";
@@ -2521,20 +2524,20 @@ const renderLogin = () => (
     const previewPlan =
       nextReviewPreview && nextReviewPreview.scheduled_for
         ? {
-            id: "preview",
-            admissionId:
-              nextReviewPreview.admissionId ??
-              selectedPatient.admissions[0]?.id ??
-              0,
-            title: "Scheduled review",
-            scheduled_for: nextReviewPreview.scheduled_for,
-            duration: "",
-            frequency: "",
-            assigned_to: clinicianDisplayName,
-            status: "Scheduled" as const,
-            notes: "",
-            route: "",
-          }
+          id: "preview",
+          admissionId:
+            nextReviewPreview.admissionId ??
+            selectedPatient.admissions[0]?.id ??
+            0,
+          title: "Scheduled review",
+          scheduled_for: nextReviewPreview.scheduled_for,
+          duration: "",
+          frequency: "",
+          assigned_to: clinicianDisplayName,
+          status: "Scheduled" as const,
+          notes: "",
+          route: "",
+        }
         : null;
     const nextReviewPlan = previewPlan ?? nextTreatmentPlans[0] ?? null;
 
@@ -2562,25 +2565,25 @@ const renderLogin = () => (
       );
       const latestNote =
         latestAdmission?.clinical_notes &&
-        latestAdmission.clinical_notes.length > 0
+          latestAdmission.clinical_notes.length > 0
           ? latestAdmission.clinical_notes[0]
           : null;
       const labEntries =
         patientLabResults.length > 0
           ? patientLabResults.map((result) => ({
-              label: `${result.test_type} · ${formatDateTime(result.recorded_at)}`,
-              value: result.summary || "Result recorded",
-              meta: `${result.recorded_by_name || "Lab"} (${result.recorded_by_role || "Laboratory"})`,
-            }))
+            label: `${result.test_type} · ${formatDateTime(result.recorded_at)}`,
+            value: result.summary || "Result recorded",
+            meta: `${result.recorded_by_name || "Lab"} (${result.recorded_by_role || "Laboratory"})`,
+          }))
           : (latestAdmission?.lab_tests_done || "")
-              .split(/\n+/)
-              .map((value) => value.trim())
-              .filter(Boolean)
-              .map((value, index) => ({
-                label: `Lab ${index + 1}`,
-                value,
-                meta: "",
-              }));
+            .split(/\n+/)
+            .map((value) => value.trim())
+            .filter(Boolean)
+            .map((value, index) => ({
+              label: `Lab ${index + 1}`,
+              value,
+              meta: "",
+            }));
       const upcomingPlan = nextReviewPlan;
       return (
         <section className="grid gap-4 lg:grid-cols-[1.1fr,0.9fr]">
@@ -2713,22 +2716,21 @@ const renderLogin = () => (
                   <h3 className="text-lg font-semibold text-slate-900">
                     {latestAdmission
                       ? latestAdmission.provisional_diagnosis ||
-                        "Diagnosis pending"
+                      "Diagnosis pending"
                       : "No admissions yet"}
                   </h3>
                 </div>
                 {latestAdmission && (
                   <span
-                    className={`rounded-full px-3 py-1 text-[11px] font-semibold ${
-                      latestAdmission.status === "active"
-                        ? "bg-amber-50 text-amber-700"
-                        : "bg-emerald-50 text-emerald-700"
-                    }`}
+                    className={`rounded-full px-3 py-1 text-[11px] font-semibold ${latestAdmission.status === "active"
+                      ? "bg-amber-50 text-amber-700"
+                      : "bg-emerald-50 text-emerald-700"
+                      }`}
                   >
                     {latestAdmission.status === "active"
                       ? "Active"
                       : latestAdmission.status.charAt(0).toUpperCase() +
-                        latestAdmission.status.slice(1)}
+                      latestAdmission.status.slice(1)}
                   </span>
                 )}
               </div>
@@ -2974,6 +2976,37 @@ const renderLogin = () => (
     };
   };
 
+  const handleGenerateSchedule = useCallback(() => {
+    if (!carePlanNumDays || carePlanNumDays < 1) return;
+    const startDateStr = treatmentNoteForm.recordedAt || getLocalISODate();
+    const startDate = new Date(startDateStr);
+    const newItems: ScheduleItem[] = [];
+
+    for (let i = 0; i < carePlanNumDays; i++) {
+      const d = new Date(startDate);
+      d.setDate(d.getDate() + i);
+      newItems.push({
+        day_number: i + 1,
+        date: d.toISOString().split("T")[0],
+        time: "09:00",
+        duration: "30 mins",
+        activity: "",
+      });
+    }
+    setCarePlanSchedule(newItems);
+  }, [carePlanNumDays, treatmentNoteForm.recordedAt]);
+
+  const updateScheduleItem = useCallback(
+    (index: number, field: keyof ScheduleItem, value: any) => {
+      setCarePlanSchedule((prev) => {
+        const next = [...prev];
+        next[index] = { ...next[index], [field]: value };
+        return next;
+      });
+    },
+    []
+  );
+
   const renderClinicalFormDrawer = () => {
     if (!showClinicalForm) {
       return null;
@@ -2981,7 +3014,7 @@ const renderLogin = () => (
     const activePatient =
       selectedPatientId && !selectedPatient
         ? treatmentReadyPatients.find((p) => p.id === selectedPatientId) ??
-          selectedPatient
+        selectedPatient
         : selectedPatient;
     const patientStage = activePatient
       ? categorizePatientStatus(activePatient)
@@ -3237,6 +3270,71 @@ const renderLogin = () => (
                   placeholder="Patient response, counselling, or follow-up steps."
                 />
               </div>
+              <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50/50 p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-sm font-semibold text-slate-700">Treatment Schedule</label>
+                    <p className="text-xs text-slate-500">Define daily care plan for this admission</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="1"
+                      className="w-16 rounded-xl border border-slate-200 px-3 py-1 text-center text-sm"
+                      placeholder="Days"
+                      value={carePlanNumDays || ""}
+                      onChange={(e) => setCarePlanNumDays(parseInt(e.target.value) || 0)}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleGenerateSchedule}
+                      className="rounded-xl bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+                    >
+                      Update
+                    </button>
+                  </div>
+                </div>
+
+                {carePlanSchedule.length > 0 && (
+                  <div className="space-y-3">
+                    {carePlanSchedule.map((item, index) => (
+                      <div key={index} className="grid grid-cols-[80px_1fr] gap-3 rounded-lg border border-slate-200 bg-white p-3">
+                        <div className="flex flex-col gap-2">
+                          <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">Day {item.day_number}</span>
+                          <input
+                            type="date"
+                            className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs w-full"
+                            value={item.date}
+                            onChange={(e) => updateScheduleItem(index, "date", e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <div className="grid grid-cols-2 gap-2">
+                            <input
+                              type="time"
+                              className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs"
+                              value={item.time}
+                              onChange={(e) => updateScheduleItem(index, "time", e.target.value)}
+                            />
+                            <input
+                              placeholder="Duration"
+                              className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs"
+                              value={item.duration}
+                              onChange={(e) => updateScheduleItem(index, "duration", e.target.value)}
+                            />
+                          </div>
+                          <input
+                            placeholder="Activity (e.g. Physiotherapy)"
+                            className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs"
+                            value={item.activity}
+                            onChange={(e) => updateScheduleItem(index, "activity", e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
               <div className="space-y-2 rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-3 text-sm text-slate-600">
                 <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-500">
                   <span>Schedule next review (optional)</span>
@@ -3348,16 +3446,16 @@ const renderLogin = () => (
     const triageRecordedAt = triageNote?.documented_at
       ? formatDateTime(triageNote.documented_at)
       : latestAdmission?.admission_date
-      ? formatDateTime(latestAdmission.admission_date)
-      : "Not recorded";
+        ? formatDateTime(latestAdmission.admission_date)
+        : "Not recorded";
     const labEntries =
       patientLabResults && patientLabResults.length > 0
         ? patientLabResults.map((result) => ({
-            id: result.id,
-            label: result.test_type,
-            summary: result.summary || "Result recorded",
-            meta: `${result.recorded_by_name || "Lab"} (${result.recorded_by_role || "Laboratory"}) · ${formatDateTime(result.recorded_at)}`,
-          }))
+          id: result.id,
+          label: result.test_type,
+          summary: result.summary || "Result recorded",
+          meta: `${result.recorded_by_name || "Lab"} (${result.recorded_by_role || "Laboratory"}) · ${formatDateTime(result.recorded_at)}`,
+        }))
         : [];
     const treatmentNotes = (selectedPatient.admissions ?? [])
       .flatMap((admission) =>
@@ -3414,11 +3512,11 @@ const renderLogin = () => (
           </header>
 
           <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex items-center justify-between">
-                <p className="text-xs uppercase tracking-wide text-slate-400">
-                  Triage snapshot
-                </p>
-              </div>
+            <div className="flex items-center justify-between">
+              <p className="text-xs uppercase tracking-wide text-slate-400">
+                Triage snapshot
+              </p>
+            </div>
             <dl className="space-y-2 text-sm text-slate-800">
               <div className="grid grid-cols-2 gap-2">
                 <div>
@@ -3548,9 +3646,8 @@ const renderLogin = () => (
                         </p>
                         <p>
                           {note.systolic_bp || note.diastolic_bp
-                            ? `${note.systolic_bp ?? "None"}/${
-                                note.diastolic_bp ?? "None"
-                              }`
+                            ? `${note.systolic_bp ?? "None"}/${note.diastolic_bp ?? "None"
+                            }`
                             : "None"}
                         </p>
                       </div>
@@ -3585,15 +3682,15 @@ const renderLogin = () => (
                         <p>{note.remarks || "None"}</p>
                       </div>
                     </div>
-                      <div className="text-[11px] text-slate-500">
-                        Recorded by: {note.recorded_by_name || "None"}({note.recorded_by_role || "None"}) ·
-                          {note.documented_at
-                            ? formatDateTime(note.documented_at)
-                            : note.created_at
-                            ? formatDateTime(note.created_at)
-                            : "None"}
-                        
-                      </div>
+                    <div className="text-[11px] text-slate-500">
+                      Recorded by: {note.recorded_by_name || "None"}({note.recorded_by_role || "None"}) ·
+                      {note.documented_at
+                        ? formatDateTime(note.documented_at)
+                        : note.created_at
+                          ? formatDateTime(note.created_at)
+                          : "None"}
+
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -3859,10 +3956,9 @@ const renderLogin = () => (
     const nextReviewDateTime =
       nextReviewDate && treatmentNoteForm.nextTreatmentTime !== undefined
         ? new Date(
-            `${nextReviewDate}T${
-              treatmentNoteForm.nextTreatmentTime || "09:00"
-            }`
-          )
+          `${nextReviewDate}T${treatmentNoteForm.nextTreatmentTime || "09:00"
+          }`
+        )
         : null;
     const nextReviewPreviewValue =
       nextReviewDateTime && !Number.isNaN(nextReviewDateTime.valueOf())
@@ -3913,6 +4009,31 @@ const renderLogin = () => (
         const detail = await response.json().catch(() => ({}));
         throw new Error(detail?.detail ?? "Unable to record treatment note");
       }
+      if (carePlanSchedule && carePlanSchedule.length > 0) {
+        try {
+          const carePlanPayload = {
+            admission: admissionId,
+            status: "finalized",
+            assessment: treatmentNoteForm.summary || treatmentNoteForm.complaints || "Care plan updated",
+            plan_items: {
+              treatment_schedule: carePlanSchedule,
+            },
+            next_review_at: nextReviewDateTime
+              ? nextReviewDateTime.toISOString()
+              : null,
+          };
+          await fetch(`${API_BASE_URL}/consultation/care-plans/`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Token ${token}`,
+            },
+            body: JSON.stringify(carePlanPayload),
+          });
+        } catch (e) {
+          console.error("Failed to save care plan", e);
+        }
+      }
       if (nextReviewDate) {
         try {
           const reviewResponse = await fetch(
@@ -3943,6 +4064,8 @@ const renderLogin = () => (
         }
       }
       setTreatmentNoteMessage("Treatment note recorded.");
+      setCarePlanSchedule([]);
+      setCarePlanNumDays(0);
       setTreatmentNoteForm((prev) => ({
         ...prev,
         summary: "",
@@ -4097,9 +4220,8 @@ const renderLogin = () => (
                           </p>
                           <p>
                             {note.systolic_bp || note.diastolic_bp
-                              ? `${note.systolic_bp ?? "None"}/${
-                                  note.diastolic_bp ?? "None"
-                                }`
+                              ? `${note.systolic_bp ?? "None"}/${note.diastolic_bp ?? "None"
+                              }`
                               : "None"}
                           </p>
                         </div>
@@ -4134,15 +4256,15 @@ const renderLogin = () => (
                           <p>{note.remarks || "None"}</p>
                         </div>
                       </div>
-                        <div className="text-[11px] text-slate-500">
-                          Recorded by: {note.recorded_by_name || "None"}({note.recorded_by_role || "None"}) ·
-                            {note.documented_at
-                              ? formatDateTime(note.documented_at)
-                              : note.created_at
-                              ? formatDateTime(note.created_at)
-                              : "None"}
-                        
-                        </div>
+                      <div className="text-[11px] text-slate-500">
+                        Recorded by: {note.recorded_by_name || "None"}({note.recorded_by_role || "None"}) ·
+                        {note.documented_at
+                          ? formatDateTime(note.documented_at)
+                          : note.created_at
+                            ? formatDateTime(note.created_at)
+                            : "None"}
+
+                      </div>
                     </div>
                   ));
                 })()}
@@ -4304,25 +4426,24 @@ const renderLogin = () => (
           )}
 
           <div className="mt-6 grid gap-6 lg:grid-cols-[320px,1fr]">
-              <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 max-h-[72vh] overflow-y-auto">
-                <p className="text-xs uppercase tracking-wide text-slate-400">
-                  Test list
-                </p>
-                <div className="space-y-2">
-                  {LAB_TESTS.map((test) => {
-                    const selected = labResultForm.testType === test;
-                    const hasCompleted =
-                      labResultForm.triageEntryId &&
-                      labCompletedTests[labResultForm.triageEntryId]?.has(test);
-                    return (
-                      <button
-                        key={test}
-                        type="button"
-                        className={`flex w-full items-center justify-between rounded-xl border px-3 py-2 text-sm font-semibold ${
-                          selected
-                          ? "border-blue-300 bg-blue-50 text-blue-700"
-                          : "border-slate-200 bg-white text-slate-800 hover:border-slate-300"
-                      }`}
+            <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 max-h-[72vh] overflow-y-auto">
+              <p className="text-xs uppercase tracking-wide text-slate-400">
+                Test list
+              </p>
+              <div className="space-y-2">
+                {LAB_TESTS.map((test) => {
+                  const selected = labResultForm.testType === test;
+                  const hasCompleted =
+                    labResultForm.triageEntryId &&
+                    labCompletedTests[labResultForm.triageEntryId]?.has(test);
+                  return (
+                    <button
+                      key={test}
+                      type="button"
+                      className={`flex w-full items-center justify-between rounded-xl border px-3 py-2 text-sm font-semibold ${selected
+                        ? "border-blue-300 bg-blue-50 text-blue-700"
+                        : "border-slate-200 bg-white text-slate-800 hover:border-slate-300"
+                        }`}
                       onClick={() => loadDraftForTest(test)}
                     >
                       <span className="flex items-center gap-2">
@@ -4333,11 +4454,11 @@ const renderLogin = () => (
                           </span>
                         )}
                       </span>
-                      </button>
-                    );
-                  })}
-                </div>
+                    </button>
+                  );
+                })}
               </div>
+            </div>
 
             <div className="flex max-h-[78vh] flex-col gap-4 overflow-y-auto pr-1">
               <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -4397,15 +4518,15 @@ const renderLogin = () => (
                         </label>
                         <select
                           className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-                        value={labCategory}
-                        onChange={(event) => {
-                          const value = event.target.value;
-                          setLabCategory(value);
-                          persistDraftForCurrentTest({ category: value });
-                          setLabError(null);
-                        }}
-                      >
-                        <option value="">Select…</option>
+                          value={labCategory}
+                          onChange={(event) => {
+                            const value = event.target.value;
+                            setLabCategory(value);
+                            persistDraftForCurrentTest({ category: value });
+                            setLabError(null);
+                          }}
+                        >
+                          <option value="">Select…</option>
                           {labCategoricalOptions[labResultForm.testType].map(
                             (option) => (
                               <option key={option} value={option}>

@@ -315,6 +315,23 @@ class CarePlanSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ('version', 'created_at', 'updated_at')
 
+    def validate(self, attrs):
+        plan_items = attrs.get('plan_items', {}) or {}
+        if 'treatment_schedule' in plan_items:
+            schedule = plan_items['treatment_schedule']
+            if not isinstance(schedule, list):
+                raise serializers.ValidationError(
+                    {'plan_items': 'treatment_schedule must be a list.'}
+                )
+            for item in schedule:
+                required = ['date', 'time', 'duration', 'activity']
+                missing = [f for f in required if f not in item]
+                if missing:
+                    raise serializers.ValidationError(
+                        {'plan_items': f'Schedule item missing fields: {", ".join(missing)}'}
+                    )
+        return attrs
+
     def create(self, validated_data):
         admission = validated_data['admission']
         latest_version = (

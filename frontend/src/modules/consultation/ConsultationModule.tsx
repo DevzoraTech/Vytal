@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+
 import {
   type CarePlan,
   type ConsultationEvent,
@@ -100,13 +101,44 @@ const exportToCsv = (filename: string, rows: Record<string, unknown>[]) => {
   URL.revokeObjectURL(url);
 };
 
-const buildCarePlanRows = (plan: CarePlan): { label: string; value: string }[] => {
+const buildCarePlanRows = (plan: CarePlan): { label: string; value: string | React.ReactNode }[] => {
   const items = plan.plan_items || {};
-  return Object.entries(items).map(([label, value]) => ({
-    label,
-    value:
-      Array.isArray(value) ? value.join(", ") : value !== undefined ? String(value) : "None",
-  }));
+  const rows: { label: string; value: string | React.ReactNode }[] = [];
+
+  // Handle structured schedule
+  if ("treatment_schedule" in items && Array.isArray((items as any).treatment_schedule)) {
+    const schedule = (items as any).treatment_schedule as any[];
+    if (schedule.length > 0) {
+      // We will render this specially in the UI, but for this helper which might expect strings, 
+      // let's return a Summary string or a special object if the consumer can handle it.
+      // For now, let's format it as a summary string for simple views, 
+      // BUT the UI code below maps these rows. Let's return a JSX element if possible? 
+      // The type signature returns string right now. Let's update signature.
+
+      const scheduleNode = (
+        <div className="mt-1 space-y-1">
+          {schedule.map((s, idx) => (
+            <div key={idx} className="grid grid-cols-[auto,1fr] gap-2 text-[11px] leading-tight text-slate-600">
+              <span className="font-medium text-slate-800">Day {s.day_number}:</span>
+              <span>{s.date} {s.time} ({s.duration}) - {s.activity}</span>
+            </div>
+          ))}
+        </div>
+      );
+      rows.push({ label: "Schedule", value: scheduleNode });
+    }
+  }
+
+  // Handle other keys
+  Object.entries(items).forEach(([key, value]) => {
+    if (key === "treatment_schedule") return;
+    rows.push({
+      label: key,
+      value: Array.isArray(value) ? value.join(", ") : value !== undefined ? String(value) : "None"
+    });
+  });
+
+  return rows;
 };
 
 const ConsultationModule = ({ apiBaseUrl, token }: ConsultationModuleProps) => {
@@ -136,6 +168,8 @@ const ConsultationModule = ({ apiBaseUrl, token }: ConsultationModuleProps) => {
   const PAGE_SIZE = 10;
   const [page, setPage] = useState(1);
   const [exportOpen, setExportOpen] = useState(false);
+
+
   const handleExportWorklist = () => {
     if (!worklist.length) return;
     const rows = worklist.map((entry) => ({
@@ -322,6 +356,7 @@ const ConsultationModule = ({ apiBaseUrl, token }: ConsultationModuleProps) => {
     }
   };
 
+
   const handleAcknowledgeTask = async (taskId: number) => {
     try {
       await fetchJson(`${apiBaseUrl}/consultation/tasks/${taskId}/acknowledge/`, {
@@ -455,23 +490,38 @@ const ConsultationModule = ({ apiBaseUrl, token }: ConsultationModuleProps) => {
                         )}
                       </div>
                       <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <p className="text-xs uppercase tracking-wide text-slate-500">
-                          Care plan
-                        </p>
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs uppercase tracking-wide text-slate-500">
+                            Care plan
+                          </p>
+                        </div>
+
                         {latestPlan ? (
                           <div className="mt-2 space-y-1 text-sm text-slate-700">
                             <div className="font-semibold">v{latestPlan.version}</div>
                             <div className="text-xs text-slate-500">
                               {latestPlan.status} · {formatDateTime(latestPlan.created_at)}
                             </div>
-                            <div className="text-slate-600">
-                              {buildCarePlanRows(latestPlan).map((row) => (
-                                <div key={row.label} className="text-xs">
+                            {latestPlan.assessment && (
+                              <div className="mt-2">
+                                <span className="text-xs font-semibold text-slate-600">Assessment:</span>
+                                <p className="text-xs text-slate-700">{latestPlan.assessment}</p>
+                              </div>
+                            )}
+                            <div className="text-slate-600 mt-2">
+                              {buildCarePlanRows(latestPlan).map((row, idx) => (
+                                <div key={idx} className="text-xs mb-1">
                                   <span className="font-semibold">{row.label}: </span>
                                   <span>{row.value}</span>
                                 </div>
                               ))}
                             </div>
+                            {latestPlan.next_review_at && (
+                              <div className="mt-2 text-xs">
+                                <span className="font-semibold">Next Review: </span>
+                                <span>{formatDateTime(latestPlan.next_review_at)}</span>
+                              </div>
+                            )}
                           </div>
                         ) : (
                           <p className="mt-2 text-sm text-slate-500">
@@ -503,8 +553,8 @@ const ConsultationModule = ({ apiBaseUrl, token }: ConsultationModuleProps) => {
                                       <p className="font-semibold text-slate-900">
                                         {formatOrNone(
                                           latestNote.treatment_details ||
-                                            latestNote.assessment ||
-                                            latestNote.note
+                                          latestNote.assessment ||
+                                          latestNote.note
                                         )}
                                       </p>
                                     </div>
@@ -526,10 +576,9 @@ const ConsultationModule = ({ apiBaseUrl, token }: ConsultationModuleProps) => {
                                       </p>
                                       <p>
                                         {formatOrNone(
-                                          `${latestNote.next_review_date || latestNote.next_treatment_date || "None"}${
-                                            latestNote.next_treatment_time
-                                              ? ` ${latestNote.next_treatment_time}`
-                                              : ""
+                                          `${latestNote.next_review_date || latestNote.next_treatment_date || "None"}${latestNote.next_treatment_time
+                                            ? ` ${latestNote.next_treatment_time}`
+                                            : ""
                                           }`
                                         )}
                                       </p>
@@ -541,8 +590,8 @@ const ConsultationModule = ({ apiBaseUrl, token }: ConsultationModuleProps) => {
                                       <p>
                                         {latestNote.systolic_bp || latestNote.diastolic_bp
                                           ? `${formatOrNone(latestNote.systolic_bp)}/${formatOrNone(
-                                              latestNote.diastolic_bp
-                                            )}`
+                                            latestNote.diastolic_bp
+                                          )}`
                                           : "None"}
                                       </p>
                                     </div>
@@ -583,8 +632,8 @@ const ConsultationModule = ({ apiBaseUrl, token }: ConsultationModuleProps) => {
                                     {latestNote.documented_at
                                       ? formatDateTime(latestNote.documented_at)
                                       : latestNote.created_at
-                                      ? formatDateTime(latestNote.created_at)
-                                      : "None"}
+                                        ? formatDateTime(latestNote.created_at)
+                                        : "None"}
                                   </div>
                                 </div>
                               );
@@ -758,11 +807,10 @@ const ConsultationModule = ({ apiBaseUrl, token }: ConsultationModuleProps) => {
                 (item) => (
                   <button
                     key={item}
-                    className={`rounded-full px-4 py-2 text-sm font-semibold ${
-                      filter === item
-                        ? "bg-blue-600 text-white"
-                        : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                    }`}
+                    className={`rounded-full px-4 py-2 text-sm font-semibold ${filter === item
+                      ? "bg-blue-600 text-white"
+                      : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                      }`}
                     onClick={() => setFilter(item)}
                     disabled={loading}
                   >
@@ -845,9 +893,8 @@ const ConsultationModule = ({ apiBaseUrl, token }: ConsultationModuleProps) => {
                       return (
                         <tr
                           key={entry.admission_id}
-                          className={`cursor-pointer transition ${
-                            isActive ? "bg-slate-50" : "hover:bg-slate-50"
-                          }`}
+                          className={`cursor-pointer transition ${isActive ? "bg-slate-50" : "hover:bg-slate-50"
+                            }`}
                           onClick={() => setSelected(entry)}
                         >
                           <td className="py-3 pr-3">
@@ -972,10 +1019,9 @@ const ConsultationModule = ({ apiBaseUrl, token }: ConsultationModuleProps) => {
                           </p>
                           <p>
                             {formatOrNone(
-                              `${note.next_review_date || note.next_treatment_date || "None"}${
-                                note.next_treatment_time
-                                  ? ` ${note.next_treatment_time}`
-                                  : ""
+                              `${note.next_review_date || note.next_treatment_date || "None"}${note.next_treatment_time
+                                ? ` ${note.next_treatment_time}`
+                                : ""
                               }`
                             )}
                           </p>
@@ -987,8 +1033,8 @@ const ConsultationModule = ({ apiBaseUrl, token }: ConsultationModuleProps) => {
                           <p>
                             {note.systolic_bp || note.diastolic_bp
                               ? `${formatOrNone(note.systolic_bp)}/${formatOrNone(
-                                  note.diastolic_bp
-                                )}`
+                                note.diastolic_bp
+                              )}`
                               : "None"}
                           </p>
                         </div>
@@ -1023,14 +1069,14 @@ const ConsultationModule = ({ apiBaseUrl, token }: ConsultationModuleProps) => {
                           <p>{formatOrNone(note.remarks)}</p>
                         </div>
                       </div>
-                        <div className="text-[11px] text-slate-500">
-                         Recorded by: {note.recorded_by_name || "None"}({note.recorded_by_role || "None"}) ·
-                            {note.documented_at
-                              ? formatDateTime(note.documented_at)
-                              : note.created_at
-                              ? formatDateTime(note.created_at)
-                              : "None"}
-                        
+                      <div className="text-[11px] text-slate-500">
+                        Recorded by: {note.recorded_by_name || "None"}({note.recorded_by_role || "None"}) ·
+                        {note.documented_at
+                          ? formatDateTime(note.documented_at)
+                          : note.created_at
+                            ? formatDateTime(note.created_at)
+                            : "None"}
+
                       </div>
                     </div>
                   ))
