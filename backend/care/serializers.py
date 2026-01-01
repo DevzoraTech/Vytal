@@ -421,6 +421,7 @@ class PatientSerializer(serializers.ModelSerializer):
     total_admissions = serializers.SerializerMethodField()
     latest_admission_status = serializers.SerializerMethodField()
     allergy_summary = serializers.SerializerMethodField()
+    next_treatment = serializers.SerializerMethodField()
     initial_admission = AdmissionInlineCreateSerializer(
         write_only=True, required=False
     )
