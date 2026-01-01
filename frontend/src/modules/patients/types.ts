@@ -125,6 +125,13 @@ export interface Patient {
   latest_admission_status: string | null;
   allergy_summary: string;
   admissions: Admission[];
+  next_treatment?: {
+    care_plan_id: number;
+    date: string;
+    time: string;
+    activity: string;
+    status: string;
+  } | null;
 }
 
 export type PatientDirectoryTab =

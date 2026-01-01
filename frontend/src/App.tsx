@@ -297,6 +297,7 @@ interface ScheduleItem {
   time: string;
   duration: string;
   activity: string;
+  status?: "pending" | "completed" | "missed";
 }
 
 function App() {
@@ -468,6 +469,10 @@ function App() {
   const [triageSaveError, setTriageSaveError] = useState<string | null>(null);
   const [carePlanNumDays, setCarePlanNumDays] = useState<number>(0);
   const [carePlanSchedule, setCarePlanSchedule] = useState<ScheduleItem[]>([]);
+  const [scheduleManagerOpen, setScheduleManagerOpen] = useState(false);
+  const [scheduleManagerPlanId, setScheduleManagerPlanId] = useState<number | null>(null);
+  const [scheduleManagerItems, setScheduleManagerItems] = useState<ScheduleItem[]>([]);
+  const [scheduleManagerLoading, setScheduleManagerLoading] = useState(false);
   type TriageApiEntry = {
     id: number;
     full_name: string;
@@ -2289,6 +2294,148 @@ function App() {
 
   const renderHeader = () => renderGenericHeader();
 
+  const handleOpenScheduleManager = async (patient: Patient, treatmentInfo: NonNullable<Patient['next_treatment']>) => {
+    setSelectedPatientId(patient.id);
+    setScheduleManagerPlanId(treatmentInfo.care_plan_id);
+    setScheduleManagerOpen(true);
+    setScheduleManagerLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/consultation/care-plans/${treatmentInfo.care_plan_id}/`, {
+        headers: { Authorization: `Token ${token}` }
+      });
+      if (res.ok) {
+        const plan = await res.json();
+        const items = (plan.plan_items?.treatment_schedule || []) as ScheduleItem[];
+        setScheduleManagerItems(items);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setScheduleManagerLoading(false);
+    }
+  };
+
+  const handleSaveScheduleManager = async () => {
+    if (!scheduleManagerPlanId) return;
+    setScheduleManagerLoading(true);
+    try {
+      // preserve other plan items? Ideally we patch only plan_items. But serializer validates structure.
+      // We fetching existing plan items? Ideally yes. But here we just update schedule.
+      // BE validation allows updating just plan_items.
+      // However, if plan_items has other keys, we might overwrite them if we just send treatment_schedule?
+      // Actually JSONField patch usually replaces the whole field unless we do specific DB ops.
+      // Let's assume for now we just send treatment_schedule in plan_items.
+      // RISK: Overwriting other plan items.
+      // Let's fetch the plan again or reuse the one we fetched?
+      // We didn't store the full plan items in state.
+      // Better: Fetch fresh before saving? Or store full plan items.
+      // Simplification: Assume only treatment_schedule matters for now or just merge.
+      // Let's fetch first to be safe.
+      const header = { Authorization: `Token ${token}`, "Content-Type": "application/json" };
+      const freshRes = await fetch(`${API_BASE_URL}/consultation/care-plans/${scheduleManagerPlanId}/`, { headers: header });
+      const freshPlan = await freshRes.json();
+      const payload = {
+        plan_items: {
+          ...freshPlan.plan_items,
+          treatment_schedule: scheduleManagerItems,
+        }
+      };
+
+      await fetch(`${API_BASE_URL}/consultation/care-plans/${scheduleManagerPlanId}/`, {
+        method: "PATCH",
+        headers: header,
+        body: JSON.stringify(payload),
+      });
+      setScheduleManagerOpen(false);
+      loadPatients(searchTerm);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setScheduleManagerLoading(false);
+    }
+  };
+
+  const renderScheduleManager = () => {
+    if (!scheduleManagerOpen) return null;
+    return (
+      <>
+        <div
+          className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm"
+          onClick={() => setScheduleManagerOpen(false)}
+        />
+        <aside className="fixed inset-y-0 right-0 z-50 w-full max-w-md border-l border-slate-200 bg-white shadow-2xl p-6 overflow-y-auto">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h3 className="text-lg font-bold text-slate-800">Manage Schedule</h3>
+              <p className="text-sm text-slate-500">Update treatment status</p>
+            </div>
+            <button
+              onClick={() => setScheduleManagerOpen(false)}
+              className="rounded-full bg-slate-100 p-2 text-slate-600 hover:bg-slate-200"
+            >
+              ✕
+            </button>
+          </div>
+
+          {scheduleManagerLoading ? (
+            <div className="text-center py-8 text-slate-500">Loading schedule...</div>
+          ) : (
+            <div className="space-y-4">
+              {scheduleManagerItems.map((item, index) => {
+                const isDone = item.status === "completed";
+                return (
+                  <div
+                    key={index}
+                    className={`flex items-start gap-3 rounded-xl border p-3 transition ${isDone ? 'bg-slate-50 border-slate-100 opacity-60' : 'bg-white border-slate-200 shadow-sm'}`}
+                  >
+                    <div className="mt-1">
+                      <input
+                        type="checkbox"
+                        checked={isDone}
+                        onChange={() => {
+                          const newItems = [...scheduleManagerItems];
+                          newItems[index] = { ...item, status: isDone ? "pending" : "completed" };
+                          setScheduleManagerItems(newItems);
+                        }}
+                        className="h-5 w-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between">
+                        <span className={`text-sm font-semibold ${isDone ? 'text-slate-500 line-through' : 'text-slate-800'}`}>
+                          Day {item.day_number}
+                        </span>
+                        <span className="text-xs text-slate-500">{item.date}</span>
+                      </div>
+                      <div className="mt-1 text-sm text-slate-600">
+                        {item.activity}
+                      </div>
+                      <div className="flex items-center gap-2 mt-2 text-xs text-slate-400">
+                        <span>{item.time}</span>
+                        <span>•</span>
+                        <span>{item.duration}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="mt-8">
+            <button
+              onClick={handleSaveScheduleManager}
+              disabled={scheduleManagerLoading}
+              className="w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-md hover:bg-blue-700 disabled:opacity-50"
+            >
+              {scheduleManagerLoading ? "Saving..." : "Save Changes"}
+            </button>
+          </div>
+        </aside>
+      </>
+    );
+  };
+
   const renderPatientDirectory = () => {
     const PAGE_SIZE = 10;
     const filteredPatients = treatmentReadyPatients.filter(
@@ -2372,7 +2519,7 @@ function App() {
                 <th className="px-4 py-3 text-[#2e004d]">Sex</th>
                 <th className="px-4 py-3 text-[#2e004d]">Phone</th>
                 <th className="px-4 py-3 text-[#2e004d]">Admission</th>
-                <th className="px-4 py-3 text-[#2e004d]">Next schedule</th>
+                <th className="px-4 py-3 text-[#2e004d]">Next treatment</th>
                 <th className="px-4 py-3 text-[#2e004d]">Stage</th>
               </tr>
             </thead>
@@ -2422,9 +2569,25 @@ function App() {
                           : "Not admitted"}
                       </td>
                       <td className="px-4 py-3">
-                        {latestAdmission?.review_date
-                          ? formatDateTime(latestAdmission.review_date)
-                          : "None"}
+                        {patient.next_treatment ? (
+                          <div className="flex items-center gap-2">
+                            <div className="flex flex-col">
+                              <span className="font-bold text-[#000033]">{formatDateOnly(patient.next_treatment.date)}</span>
+                              <span className="text-xs text-gray-500">{patient.next_treatment.time}</span>
+                            </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenScheduleManager(patient, patient.next_treatment!);
+                              }}
+                              className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-600 hover:bg-blue-100"
+                            >
+                              Record
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400">None</span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <span
@@ -4781,6 +4944,8 @@ function App() {
       </div>
       {showPatientForm && hasPatientAccess && renderPatientFormModal()}
       {showAppointmentModal && renderAppointmentModal()}
+      {renderClinicalFormDrawer()}
+      {renderScheduleManager()}
       {renderLabModal()}
     </div>
   );

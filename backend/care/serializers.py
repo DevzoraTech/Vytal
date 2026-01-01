@@ -444,6 +444,7 @@ class PatientSerializer(serializers.ModelSerializer):
             'total_admissions',
             'latest_admission_status',
             'allergy_summary',
+            'next_treatment',
             'admissions',
             'initial_admission',
             'created_at',
@@ -453,6 +454,7 @@ class PatientSerializer(serializers.ModelSerializer):
             'total_admissions',
             'latest_admission_status',
             'allergy_summary',
+            'next_treatment',
             'admissions',
             'created_at',
             'updated_at',
@@ -467,6 +469,58 @@ class PatientSerializer(serializers.ModelSerializer):
 
     def get_allergy_summary(self, obj):
         return obj.allergy_summary()
+
+    def get_next_treatment(self, obj):
+        from django.utils import timezone
+        latest_admission = obj.latest_admission
+        if not latest_admission:
+            return {'date': '2025-01-01', 'time': '00:00', 'activity': 'DEBUG: No Admission', 'status': 'pending', 'care_plan_id': 0}
+        
+        # Get latest care plan
+        care_plan = CarePlan.objects.filter(
+            admission=latest_admission, 
+            is_archived=False
+        ).order_by('-created_at').first()
+
+        if not care_plan:
+             return {'date': '2025-01-01', 'time': '00:00', 'activity': f'DEBUG: No Plan (Adm {latest_admission.id})', 'status': 'pending', 'care_plan_id': 0}
+
+        schedule = care_plan.plan_items.get('treatment_schedule', [])
+        if not isinstance(schedule, list):
+             return {'date': '2025-01-01', 'time': '00:00', 'activity': 'DEBUG: Schedule not list', 'status': 'pending', 'care_plan_id': 0}
+
+        now_date = timezone.now().date().isoformat()
+        
+        # Find next pending item
+        # We sort by date/time just in case, though they entered order matters
+        # Filter for items >= today and status != 'done'
+        
+        # Simple helper to sort
+        def get_sort_key(item):
+            return f"{item.get('date')}T{item.get('time', '00:00')}"
+
+        future_items = []
+        for item in schedule:
+            s_date = item.get('date')
+            status = item.get('status', 'pending')
+            # Check logic: NOT completed/missed (allow past dates as 'overdue')
+            # Note: Frontend uses 'completed' or 'pending'.
+            if s_date and status not in ('completed', 'missed', 'done'):
+                future_items.append(item)
+        
+        future_items.sort(key=get_sort_key)
+        
+        if future_items:
+            next_item = future_items[0]
+            return {
+                'care_plan_id': care_plan.id,
+                'date': next_item.get('date'),
+                'time': next_item.get('time'),
+                'activity': next_item.get('activity'),
+                'status': next_item.get('status', 'pending')
+            }
+        
+        return {'date': '2025-01-01', 'time': '00:00', 'activity': f'DEBUG: 0 Pending (Total {len(schedule)})', 'status': 'pending', 'care_plan_id': 0}
 
     def create(self, validated_data):
         admission_data = validated_data.pop('initial_admission', None)

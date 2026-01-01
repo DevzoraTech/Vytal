@@ -45,8 +45,11 @@ interface ClinicalNote {
   recorded_by_role?: string | null;
 }
 
-const formatDateTime = (value?: string | null) =>
-  value ? new Date(value).toLocaleString() : "—";
+const formatDateTime = (value?: string | null) => {
+  if (!value) return "—";
+  const d = new Date(value);
+  return `${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+};
 
 const formatPatientIdentifier = (patientId?: number | null) => {
   if (!patientId || Number.isNaN(patientId)) return "PMA0000";
