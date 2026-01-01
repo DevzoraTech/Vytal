@@ -2509,10 +2509,6 @@ function App() {
             >
               Document Care Plan
             </button>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-              {filteredPatients.length}{" "}
-              {filteredPatients.length === 1 ? "patient" : "patients"}
-            </span>
           </div>
         </div>
         <div className="flex flex-wrap gap-3 text-sm font-semibold text-gray-500">
@@ -3317,14 +3313,6 @@ function App() {
                     }
                     required
                   />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <label className="text-xs font-semibold text-slate-500">
-                  Person responsible
-                </label>
-                <div className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-                  {clinicianDisplayName}
                 </div>
               </div>
               <div className="space-y-2">
