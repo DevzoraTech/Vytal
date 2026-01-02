@@ -473,6 +473,19 @@ function App() {
   const [scheduleManagerPlanId, setScheduleManagerPlanId] = useState<number | null>(null);
   const [scheduleManagerItems, setScheduleManagerItems] = useState<(ScheduleItem & { locked?: boolean })[]>([]);
   const [scheduleManagerLoading, setScheduleManagerLoading] = useState(false);
+  const [actionMenuOpenId, setActionMenuOpenId] = useState<number | null>(null);
+  const [extendPlanOpen, setExtendPlanOpen] = useState(false);
+  const [extendPlanNumDays, setExtendPlanNumDays] = useState<number>(0);
+  const [extendPlanSchedule, setExtendPlanSchedule] = useState<ScheduleItem[]>([]);
+  const [extendPlanSeedDate, setExtendPlanSeedDate] = useState<string | null>(null);
+  const [extendPlanLoading, setExtendPlanLoading] = useState(false);
+  const [extendPlanSubmitting, setExtendPlanSubmitting] = useState(false);
+  const [extendPlanError, setExtendPlanError] = useState<string | null>(null);
+  const [extendPlanMessage, setExtendPlanMessage] = useState<string | null>(null);
+  const [extendPlanPreviousSchedule, setExtendPlanPreviousSchedule] = useState<ScheduleItem[]>([]);
+  const [patientScheduleMap, setPatientScheduleMap] = useState<
+    Record<number, { date: string; time?: string | null } | null | undefined>
+  >({});
   type TriageApiEntry = {
     id: number;
     full_name: string;
@@ -1099,6 +1112,75 @@ function App() {
     }
   }, [activeModule, token, loadTriagePatients, loadLabQueue, loadLabRecords, loadLabOrders, loadLabTasks]);
 
+  const loadPatientSchedules = useCallback(
+    async (targets: Patient[]) => {
+      if (!token || targets.length === 0) return;
+      const updates: Record<number, { date: string; time?: string | null } | null> = {};
+      await Promise.all(
+        targets.map(async (patient) => {
+          const admission = getLatestAdmission(patient);
+          if (!admission?.id) {
+            updates[patient.id] = null;
+            return;
+          }
+          try {
+            const res = await fetch(
+              `${API_BASE_URL}/consultation/care-plans/?admission=${admission.id}`,
+              { headers: { Authorization: `Token ${token}` } }
+            );
+            if (!res.ok) {
+              updates[patient.id] = null;
+              return;
+            }
+            const raw = await res.json();
+            const plans = Array.isArray(raw)
+              ? raw
+              : Array.isArray(raw?.results)
+                ? raw.results
+                : [];
+            if (!plans.length) {
+              updates[patient.id] = null;
+              return;
+            }
+            const sortedPlans = [...plans].sort(
+              (a, b) =>
+                Date.parse(b?.created_at ?? "") -
+                Date.parse(a?.created_at ?? "")
+            );
+            const latestPlan = sortedPlans[0];
+            const schedule = (latestPlan?.plan_items?.treatment_schedule || []) as ScheduleItem[];
+            if (!schedule.length) {
+              updates[patient.id] = null;
+              return;
+            }
+            const sortedSchedule = [...schedule].sort((a, b) => {
+              const dateDiff =
+                Date.parse(a?.date ?? "") - Date.parse(b?.date ?? "");
+              if (dateDiff !== 0) return dateDiff;
+              return (a.day_number ?? 0) - (b.day_number ?? 0);
+            });
+            const earliest = sortedSchedule[0];
+            updates[patient.id] = earliest?.date
+              ? { date: earliest.date, time: earliest.time ?? "" }
+              : null;
+          } catch (e) {
+            updates[patient.id] = null;
+          }
+        })
+      );
+      setPatientScheduleMap((prev) => ({ ...prev, ...updates }));
+    },
+    [API_BASE_URL, token]
+  );
+
+  useEffect(() => {
+    const missing = treatmentReadyPatients.filter(
+      (p) => patientScheduleMap[p.id] === undefined
+    );
+    if (missing.length === 0) return;
+    void loadPatientSchedules(missing);
+  }, [treatmentReadyPatients, patientScheduleMap, loadPatientSchedules]);
+
   useEffect(() => {
     if (!token || !selectedPatient) {
       setCarePlans([]);
@@ -1207,6 +1289,12 @@ function App() {
       setNextReviewPreview(null);
     }
   }, [nextTreatmentPlans, nextReviewPreview]);
+
+  useEffect(() => {
+    const closeActionMenus = () => setActionMenuOpenId(null);
+    document.addEventListener("click", closeActionMenus);
+    return () => document.removeEventListener("click", closeActionMenus);
+  }, []);
 
   useEffect(() => {
     if (!showClinicalForm) {
@@ -2478,7 +2566,7 @@ function App() {
               Clinicians Worklist
             </h2>
             <p className="text-sm text-[#4B5563]">
-              Review lab results, record treaments and set Patients review schedules.
+              Review lab results, set Care Plan and record treatments.
             </p>
           </div>
 
@@ -2529,9 +2617,9 @@ function App() {
             </button>
           ))}
         </div>
-        <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
+        <div className="overflow-visible rounded-2xl border border-gray-200 bg-white">
           <table className="min-w-full text-left text-sm text-[#4B5563]">
-            <thead className="bg-[#F9FAFB] text-xs font-semibold uppercase tracking-wide text-[#6B7280]">
+            <thead className="bg-[#f0fff5] text-xs font-semibold uppercase tracking-wide text-[#4d4d4d]">
               <tr>
                 <th className="px-4 py-3 text-[#2e004d]">Patient ID</th>
                 <th className="px-4 py-3 text-[#2e004d]">Patient</th>
@@ -2541,19 +2629,19 @@ function App() {
                 <th className="px-4 py-3 text-[#2e004d]">Phone</th>
                 <th className="px-4 py-3 text-[#2e004d]">Admission</th>
                 <th className="px-4 py-3 text-[#2e004d]">Next treatment</th>
-                <th className="px-4 py-3 text-[#2e004d]">Stage</th>
+                <th className="px-4 py-3 text-[#2e004d]">Action</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-sm text-[#9CA3AF]">
+                  <td colSpan={9} className="px-4 py-8 text-center text-sm text-[#9CA3AF]">
                     Loading patients?
                   </td>
                 </tr>
               ) : filteredPatients.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-sm text-[#9CA3AF]">
+                  <td colSpan={9} className="px-4 py-8 text-center text-sm text-[#9CA3AF]">
                     {emptyCopy[patientDirectoryTab]}
                   </td>
                 </tr>
@@ -2590,47 +2678,113 @@ function App() {
                           : "Not admitted"}
                       </td>
                       <td className="px-4 py-3">
-                        {patient.next_treatment ? (
-                          <div className="flex items-center gap-2">
+                        {(() => {
+                          const scheduleInfo = patientScheduleMap[patient.id];
+                          const dateToShow = scheduleInfo?.date || patient.next_treatment?.date || null;
+                          const timeToShow = scheduleInfo?.time || patient.next_treatment?.time || "";
+                          if (!dateToShow) {
+                            return <span className="text-slate-400">None</span>;
+                          }
+                          return (
                             <div className="flex flex-col">
-                              <span className="font-bold text-[#000033]">{formatDateOnly(patient.next_treatment.date)}</span>
-                              <span className="text-xs text-gray-500">{patient.next_treatment.time}</span>
+                              <span className="font-bold text-[#000033]">{formatDateOnly(dateToShow)}</span>
+                              {timeToShow ? (
+                                <span className="text-xs text-gray-500">{timeToShow}</span>
+                              ) : null}
                             </div>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleOpenScheduleManager(patient, patient.next_treatment!);
-                              }}
-                              className="rounded-full bg-slate-900 px-3 py-1 text-xs font-bold text-white hover:bg-slate-800"
-                            >
-                              Record
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedPatientId(patient.id);
-                                handleOpenClinicalForm(patient);
-                              }}
-                              className="rounded-full bg-slate-900 px-3 py-1 text-xs font-bold text-white hover:bg-slate-800"
-                            >
-                              Adjust Plan
-                            </button>
-                          </div>
-                        ) : (
-                          <span className="text-slate-400">None</span>
-                        )}
+                          );
+                        })()}
                       </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${stage === "Lab_done"
-                            ? "bg-yellow-50 text-yellow-700"
-                            : stage === "In Treatment"
-                              ? "bg-blue-50 text-blue-700"
-                              : "bg-gray-100 text-gray-700"
-                            }`}
-                        >
-                          {stage}
-                        </span>
+                      <td className="px-4 py-2">
+                        <div className="relative flex justify-end">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActionMenuOpenId((prev) => (prev === patient.id ? null : patient.id));
+                            }}
+                            className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50"
+                          >
+                            <img
+                              src="vertical_more.png"
+                              alt="more"
+                              width={16}
+                              height={16}
+                            />
+                          </button>
+                          {actionMenuOpenId === patient.id && (
+                            <div className="absolute right-0 z-20 mt-2 w-44 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActionMenuOpenId(null);
+                                  if (!patient.next_treatment) return;
+                                  handleOpenScheduleManager(patient, patient.next_treatment);
+                                }}
+                                disabled={!patient.next_treatment}
+                                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                <svg
+                                  className="h-4 w-4 text-slate-500"
+                                  viewBox="0 0 24 24"
+                                  fill="#ccffdd"
+                                  stroke="#000702ff"
+                                  strokeWidth="1.8"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <path d="M9 11l2 2 4-4" />
+                                  <rect x="4" y="3" width="16" height="18" rx="2" />
+                                  <path d="M9 3v4h6V3" />
+                                </svg>
+                                Record
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActionMenuOpenId(null);
+                                }}
+                                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                              >
+                                <svg
+                                  className="h-4 w-4 text-slate-500"
+                                  viewBox="0 0 24 24"
+                                  fill="#ccffdd"
+                                  stroke="#000702ff"
+                                  strokeWidth="1.8"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <circle cx="12" cy="12" r="9" />
+                                  <path d="M12 7v5l3 3" />
+                                </svg>
+                                Set review
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActionMenuOpenId(null);
+                                  const hasActivePlan = Boolean(patient.next_treatment);
+                                  if (hasActivePlan) return;
+                                  handleOpenExtendPlan(patient);
+                                }}
+                                disabled={Boolean(patient.next_treatment)}
+                                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                <img
+                                  src="extend_plan.png"
+                                  alt="more"
+                                  width={16}
+                                  height={16}
+                                />
+                                Extend plan
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -3201,6 +3355,43 @@ function App() {
     []
   );
 
+  const handleGenerateExtendSchedule = useCallback(() => {
+    if (!extendPlanNumDays || extendPlanNumDays < 1) {
+      setExtendPlanSchedule([]);
+      return;
+    }
+    const baseDateStr = extendPlanSeedDate || getLocalISODate();
+    const startDate = new Date(baseDateStr);
+    if (Number.isNaN(startDate.valueOf())) {
+      setExtendPlanSchedule([]);
+      return;
+    }
+    const newItems: ScheduleItem[] = [];
+    for (let i = 0; i < extendPlanNumDays; i++) {
+      const d = new Date(startDate);
+      d.setDate(d.getDate() + i);
+      newItems.push({
+        day_number: i + 1,
+        date: d.toISOString().split("T")[0],
+        time: "09:00",
+        duration: "30 mins",
+        activity: "",
+      });
+    }
+    setExtendPlanSchedule(newItems);
+  }, [extendPlanNumDays, extendPlanSeedDate]);
+
+  const updateExtendScheduleItem = useCallback(
+    (index: number, field: keyof ScheduleItem, value: any) => {
+      setExtendPlanSchedule((prev) => {
+        const next = [...prev];
+        next[index] = { ...next[index], [field]: value };
+        return next;
+      });
+    },
+    []
+  );
+
   const renderClinicalFormDrawer = () => {
     if (!showClinicalForm) {
       return null;
@@ -3476,7 +3667,7 @@ function App() {
                       onClick={handleGenerateSchedule}
                       className="rounded-xl bg-slate-900 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-800"
                     >
-                      Update
+                      Generate
                     </button>
                   </div>
                 </div>
@@ -3486,7 +3677,9 @@ function App() {
                     {carePlanSchedule.map((item, index) => (
                       <div key={index} className="grid grid-cols-[80px_1fr] gap-3 rounded-lg border border-slate-200 bg-white p-3">
                         <div className="flex flex-col gap-2">
-                          <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">Day {item.day_number}</span>
+                          <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">
+                            {index === 0 ? "Start date" : `Day ${index + 1}`}
+                          </span>
                           <input
                             type="date"
                             className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs w-full"
@@ -3534,6 +3727,192 @@ function App() {
                 <button
                   type="button"
                   onClick={() => setShowClinicalForm(false)}
+                  className="rounded-full border border-gray-200 px-5 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </fieldset>
+          </form>
+        </aside>
+      </>
+    );
+  };
+
+  const renderExtendPlanDrawer = () => {
+    if (!extendPlanOpen) return null;
+    const activePatient =
+      selectedPatientId && !selectedPatient
+        ? patients.find((p) => p.id === selectedPatientId) ?? selectedPatient
+        : selectedPatient;
+    const patientStatus = activePatient ? categorizePatientStatus(activePatient) : null;
+    const isDischarged = patientStatus === "Discharged";
+    return (
+      <>
+        <div
+          className="fixed inset-0 z-40 bg-black/30"
+          role="presentation"
+          onClick={() => setExtendPlanOpen(false)}
+        />
+        <aside className="fixed inset-y-0 right-0 z-50 w-full max-w-md transform bg-white shadow-2xl transition duration-300 ease-out">
+          <form
+            onSubmit={handleExtendPlanSubmit}
+            className="flex h-full flex-col space-y-4 overflow-y-auto border-l border-gray-100 bg-white px-6 py-6"
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm font-semibold text-gray-900">Extend care plan</p>
+                <p className="text-xs text-gray-500">
+                  Create a new care plan version with an updated treatment schedule.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="text-sm font-semibold text-gray-500 hover:text-gray-900"
+                onClick={() => setExtendPlanOpen(false)}
+              >
+                ✕
+              </button>
+            </div>
+            {extendPlanMessage && (
+              <div className="rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                {extendPlanMessage}
+              </div>
+            )}
+            {extendPlanError && (
+              <div className="rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">
+                {extendPlanError}
+              </div>
+            )}
+            {isDischarged && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                This patient has been discharged. Plans cannot be extended.
+              </div>
+            )}
+            <fieldset
+              disabled={isDischarged || extendPlanSubmitting}
+              className={`${isDischarged ? "opacity-60" : ""} space-y-4`}
+            >
+              <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-xs text-slate-600">
+                Only the treatment schedule is editable here. Existing vitals and notes remain unchanged.
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-slate-500">Number of days</label>
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    min="1"
+                    className="w-24 rounded-2xl border border-slate-200 px-3 py-2 text-sm"
+                    placeholder="Days"
+                    value={extendPlanNumDays || ""}
+                    onChange={(e) => setExtendPlanNumDays(parseInt(e.target.value) || 0)}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleGenerateExtendSchedule}
+                    className="rounded-2xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+                    disabled={!extendPlanNumDays}
+                  >
+                    Generate
+                  </button>
+                </div>
+                <p className="text-xs text-slate-500">
+                  We’ll start on the next available date and label it as “Start date”.
+                </p>
+              </div>
+
+              {extendPlanLoading ? (
+                <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">
+                  Loading previous plan…
+                </div>
+              ) : null}
+
+              {!extendPlanLoading && extendPlanPreviousSchedule.length > 0 && (
+                <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Previous plan (latest)
+                    </p>
+                    <span className="text-[11px] font-semibold text-slate-500">
+                      {extendPlanPreviousSchedule.length} day{extendPlanPreviousSchedule.length === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {extendPlanPreviousSchedule.map((item, idx) => (
+                      <div
+                        key={`${item.date}-${idx}`}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-slate-900">Day {item.day_number}</span>
+                          <span className="text-slate-500">{item.date}</span>
+                        </div>
+                        <div className="mt-1 flex flex-wrap gap-3 text-[11px] text-slate-500">
+                          <span>{item.time}</span>
+                          {item.duration ? <span>• {item.duration}</span> : null}
+                        </div>
+                        {item.activity && (
+                          <p className="mt-1 text-[12px] text-slate-800">{item.activity}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {extendPlanSchedule.length > 0 && (
+                <div className="space-y-3">
+                  {extendPlanSchedule.map((item, index) => (
+                    <div key={index} className="grid grid-cols-[80px_1fr] gap-3 rounded-lg border border-slate-200 bg-white p-3">
+                      <div className="flex flex-col gap-2">
+                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">
+                          {index === 0 ? "Start date" : `Day ${index + 1}`}
+                        </span>
+                        <input
+                          type="date"
+                          className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs"
+                          value={item.date}
+                          onChange={(e) => updateExtendScheduleItem(index, "date", e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            type="time"
+                            className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs"
+                            value={item.time}
+                            onChange={(e) => updateExtendScheduleItem(index, "time", e.target.value)}
+                          />
+                          <input
+                            placeholder="Duration"
+                            className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs"
+                            value={item.duration}
+                            onChange={(e) => updateExtendScheduleItem(index, "duration", e.target.value)}
+                          />
+                        </div>
+                        <input
+                          placeholder="Activity (e.g. Physiotherapy)"
+                          className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs"
+                          value={item.activity}
+                          onChange={(e) => updateExtendScheduleItem(index, "activity", e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-3 pt-2">
+                <button
+                  type="submit"
+                  className="rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white shadow-subtle disabled:opacity-60 hover:bg-slate-800"
+                  disabled={extendPlanSubmitting}
+                >
+                  {extendPlanSubmitting ? "Saving…" : "Save new plan"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExtendPlanOpen(false)}
                   className="rounded-full border border-gray-200 px-5 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50"
                 >
                   Cancel
@@ -4274,6 +4653,133 @@ function App() {
     setShowClinicalForm(true);
   };
 
+  const handleOpenExtendPlan = async (patient: Patient) => {
+    setSelectedPatientId(patient.id);
+    setActionMenuOpenId(null);
+    const status = categorizePatientStatus(patient);
+    if (status === "Discharged") {
+      setExtendPlanError("Cannot extend plan for a discharged patient.");
+      setExtendPlanOpen(true);
+      return;
+    }
+    setExtendPlanError(null);
+    setExtendPlanMessage(null);
+    setExtendPlanPreviousSchedule([]);
+    setExtendPlanNumDays(0);
+    setExtendPlanSchedule([]);
+    setExtendPlanSeedDate(null);
+    setExtendPlanOpen(true);
+    const admission = getLatestAdmission(patient);
+    if (!admission?.id) {
+      setExtendPlanError("No admission available for this patient.");
+      return;
+    }
+    setExtendPlanLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/consultation/care-plans/?admission=${admission.id}`, {
+        headers: { Authorization: `Token ${token}` }
+      });
+      if (res.ok) {
+        const raw = await res.json();
+        const plans = Array.isArray(raw)
+          ? raw
+          : Array.isArray(raw?.results)
+            ? raw.results
+            : [];
+        const latestPlan = plans[0];
+        const schedule = (latestPlan?.plan_items?.treatment_schedule || []) as ScheduleItem[];
+        setExtendPlanPreviousSchedule(schedule);
+        if (schedule.length > 0) {
+          const lastDate = schedule[schedule.length - 1]?.date;
+          if (lastDate) {
+            const d = new Date(lastDate);
+            if (!Number.isNaN(d.valueOf())) {
+              d.setDate(d.getDate() + 1);
+              setExtendPlanSeedDate(d.toISOString().split("T")[0]);
+            }
+          }
+        }
+        if (!schedule.length) {
+          setExtendPlanSeedDate(getLocalISODate());
+        }
+      } else {
+        setExtendPlanError("Unable to load previous care plans.");
+      }
+    } catch (e) {
+      console.error("Error loading prior care plan", e);
+      setExtendPlanError("Unable to load previous care plans.");
+      setExtendPlanSeedDate(getLocalISODate());
+    } finally {
+      setExtendPlanLoading(false);
+    }
+  };
+
+  const handleExtendPlanSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedPatientId) {
+      setExtendPlanError("Select a patient to extend a care plan.");
+      return;
+    }
+    const patient = patients.find((p) => p.id === selectedPatientId) || selectedPatient;
+    if (!patient) {
+      setExtendPlanError("Patient not found.");
+      return;
+    }
+    const status = categorizePatientStatus(patient);
+    if (status === "Discharged") {
+      setExtendPlanError("Cannot extend plan for a discharged patient.");
+      return;
+    }
+    const admission = getLatestAdmission(patient);
+    if (!admission?.id) {
+      setExtendPlanError("No admission available for this patient.");
+      return;
+    }
+    if (!extendPlanSchedule.length) {
+      setExtendPlanError("Add at least one day to the treatment schedule.");
+      return;
+    }
+    if (!token) {
+      setExtendPlanError("You must be logged in to extend a care plan.");
+      return;
+    }
+    setExtendPlanSubmitting(true);
+    setExtendPlanError(null);
+    setExtendPlanMessage(null);
+    try {
+      const carePlanPayload = {
+        admission: admission.id,
+        status: "finalized",
+        assessment: "Extended care plan",
+        plan_items: {
+          treatment_schedule: extendPlanSchedule,
+        },
+        next_review_at: null,
+      };
+      const response = await fetch(`${API_BASE_URL}/consultation/care-plans/`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Token ${token}`,
+        },
+        body: JSON.stringify(carePlanPayload),
+      });
+      if (!response.ok) {
+        const detail = await response.json().catch(() => ({}));
+        throw new Error(detail?.detail ?? "Unable to extend care plan");
+      }
+      setExtendPlanMessage("New care plan version saved.");
+      setExtendPlanOpen(false);
+      setExtendPlanSchedule([]);
+      setExtendPlanNumDays(0);
+      await loadPatients(searchTerm);
+    } catch (err) {
+      setExtendPlanError(err instanceof Error ? err.message : "Unable to extend care plan");
+    } finally {
+      setExtendPlanSubmitting(false);
+    }
+  };
+
   const renderPatientModule = () => {
     if (!hasPatientAccess) {
       return (
@@ -4955,6 +5461,7 @@ function App() {
       {showPatientForm && hasPatientAccess && renderPatientFormModal()}
       {showAppointmentModal && renderAppointmentModal()}
       {renderClinicalFormDrawer()}
+      {renderExtendPlanDrawer()}
       {renderScheduleManager()}
       {renderLabModal()}
     </div>
