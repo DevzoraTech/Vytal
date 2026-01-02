@@ -6,6 +6,7 @@ import type {
   LabTab,
   LabTask,
 } from "./types";
+import { LAB_TEST_GROUPS } from "./types";
 
 interface LabModuleProps {
   activeTab: LabTab;
@@ -62,6 +63,18 @@ const exportToCsv = (filename: string, rows: Record<string, unknown>[]) => {
   URL.revokeObjectURL(url);
 };
 
+const testCategoryLookup: Record<string, string> = Object.entries(LAB_TEST_GROUPS).reduce(
+  (acc, [category, tests]) => {
+    tests.forEach((test) => {
+      acc[test] = category;
+    });
+    return acc;
+  },
+  {}
+);
+
+const getTestCategory = (testType: string) => testCategoryLookup[testType] ?? "Other";
+
 const LabModule = ({
   activeTab,
   onTabChange,
@@ -83,6 +96,18 @@ const LabModule = ({
   const [recordReportEntry, setRecordReportEntry] = useState<RecordReportPayload | null>(null);
   const [recordReportGeneratedAt, setRecordReportGeneratedAt] = useState<string | null>(null);
   const [recordReportComment, setRecordReportComment] = useState<string>("");
+  const [recordReportFlags, setRecordReportFlags] = useState<Record<string, string>>({});
+  const flagOptions = [
+    { value: "N/A", label: "N/A", color: "text-slate-600"},
+    { value: "normal", label: "Normal", color: "text-emerald-700"},
+    { value: "low", label: "Low", color: "text-amber-700"},
+    { value: "high", label: "High", color: "text-orange-700"},
+  ];
+  const getFlagClasses = (flag: string) => {
+    const option = flagOptions.find((opt) => opt.value === flag);
+    if (!option) return "bg-slate-100 text-slate-600";
+    return `${option.color}`;
+  };
   const handleExportQueue = () => {
     if (!queue.length) return;
     const rows = queue.map((entry) => ({
@@ -414,6 +439,11 @@ const LabModule = ({
                                     collectedAt: group.collectedAt,
                                     entries: group.entries,
                                   });
+                                  const initialFlags: Record<string, string> = {};
+                                  group.entries.forEach((entry, entryIdx) => {
+                                    initialFlags[`${entry.id ?? "idx"}-${entryIdx}-${entry.test_type}`] = "none";
+                                  });
+                                  setRecordReportFlags(initialFlags);
                                   setRecordReportGeneratedAt(new Date().toISOString());
                                   setRecordReportComment("");
                                 }}
@@ -496,10 +526,10 @@ const LabModule = ({
                 <tr key={order.id}>
                   <td className="py-3 pr-3">
                     <div className="font-semibold">
-                      {order.patient_identifier || order.patient_name || "Patient"}
+                      {order.patient_name || "Patient"}
                     </div>
                     <div className="text-xs text-gray-500">
-                      Internal ID: {order.patient_id ?? "—"}
+                      PID: {order.patient_identifier ?? "—"}
                     </div>
                   </td>
                   <td className="py-3 pr-3 capitalize">{order.priority}</td>
@@ -601,7 +631,10 @@ const LabModule = ({
         <>
           <div
             className="fixed inset-0 z-40 bg-black/30"
-            onClick={() => setRecordReportEntry(null)}
+            onClick={() => {
+              setRecordReportEntry(null);
+              setRecordReportFlags({});
+            }}
             role="presentation"
           />
           <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
@@ -609,32 +642,46 @@ const LabModule = ({
               className="w-full max-w-5xl overflow-hidden rounded-2xl bg-white shadow-2xl max-h-[90vh] overflow-y-auto"
               style={{ margin: "1cm 2.54cm 2.54cm 2.54cm" }}
             >
+              <div className="mb-4 flex items-center justify-between">
+                  <button
+                    type="button"
+                    className="rounded-full border border-slate-200 px-3 py-1 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                    onClick={() => {
+                      setRecordReportEntry(null);
+                      setRecordReportFlags({});
+                    }}
+                  >
+                    Close
+                  </button>
+                </div>
               <div className="border-b border-slate-200 bg-white px-6 py-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <img src="/paleologo.png" alt="Paleo Medicals" className="h-12 w-12 object-contain" />
-                    <div>
-                      <div className="text-lg font-extrabold tracking-wide text-[#1d3f72]">
+                <div className="relative flex items-start justify-center gap-4">
+                  <div className="flex items-center justify-center gap-3">
+                    <img src="/paleologo.png" alt="Paleo Medicals" className="h-16 w-16 object-contain" />
+                    <div className="flex flex-col items-start text-left">
+                      <div className="calibri uppercase text-[20px] font-extrabold tracking-wide text-[#008000]">
                         PALEO MEDICALS
                       </div>
-                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      <div className="text-[13px] font-medium tracking-wide text-slate-500 italic">
                         Doctor to Community
+                      </div>
+                      <div className="text-[14px] font-medium text-slate-600">
+                        Buziga, Lukuli Link
                       </div>
                     </div>
                   </div>
-                  <div className="text-right text-[11px] text-slate-600">
+                  <div className="absolute right-0 top-0 text-right text-[11px] text-slate-600">
                     <div className="font-semibold text-slate-800">0705 011745 / 0786 053163</div>
                     <div>admin@paleomedicals.health</div>
                     <div>https://paleomedicals.health</div>
                   </div>
                 </div>
-                <div className="mt-2 text-[11px] font-semibold text-slate-600">
-                  Buziga, Lukuli Link
-                </div>
-                <div className="text-[11px] font-semibold text-slate-600">
+                <div className="text-[15px] text-center font-semibold text-slate-600">
                   General Medicine, Pediatrics, Obstetrics, Gynecology, Lab and Ultra Sound scan
                 </div>
               </div>
+
+              <h3 className="text-base font-semibold text-center mt-2 uppercase text-slate-900">Laboratory Report</h3>
 
               <div className="grid grid-cols-[1.1fr_0.35fr_1.1fr] items-stretch gap-3 border-b border-slate-200 bg-white px-6 py-4">
                 <div className="rounded-[2px] border border-slate-200 bg-white px-4 py-3 shadow-sm">
@@ -642,7 +689,7 @@ const LabModule = ({
                   <div className="text-base font-semibold text-slate-900">
                     {recordReportEntry.patientName || "—"}
                   </div>
-                  <div className="mt-1 grid grid-cols-2 gap-2 text-[11px] text-slate-600">
+                  <div className="mt-1 grid grid-cols-2 gap-2 text-[13px] text-slate-600">
                     <span className="col-span-2">Age: {recordReportEntry.patientAge ?? "—"}</span>
                     <span className="col-span-2">Sex: {recordReportEntry.patientSex || "—"}</span>
                     <span className="col-span-2">
@@ -695,38 +742,72 @@ const LabModule = ({
               </div>
 
               <div className="px-6 py-4">
-                <div className="mb-4 flex items-center justify-between">
-                  <h3 className="text-base font-semibold text-slate-900">Investigations</h3>
-                  <button
-                    type="button"
-                    className="rounded-full border border-slate-200 px-3 py-1 text-sm font-semibold text-slate-600 hover:bg-slate-50"
-                    onClick={() => setRecordReportEntry(null)}
-                  >
-                    Close
-                  </button>
-                </div>
                 <div className="rounded-xl border border-slate-200">
-                  <div className="grid grid-cols-[2fr_1fr_1fr_1fr] gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
-                    <span>Investigation</span>
+                  <div className="grid grid-cols-[2fr_1fr_1fr_1fr] gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide bg-[#e6ffee] text-slate-600">
+                    <span>Test</span>
                     <span>Result</span>
                     <span>Flag</span>
                     <span className="text-right">Biological Reference Range / Unit</span>
                   </div>
                   <div className="divide-y divide-slate-100">
-                    {(recordReportEntry.entries || []).map((entry, idx) => (
-                      <div
-                        key={`${entry.test_type}-${entry.id}-${idx}`}
-                        className="grid grid-cols-[2fr_1fr_1fr_1fr] items-center gap-2 px-4 py-3 text-sm text-slate-700"
-                      >
-                        <span className="font-semibold text-slate-900">{entry.test_type}</span>
-                        <span className="text-slate-700">{entry.summary || "—"}</span>
-                        <span className="text-slate-500">—</span>
-                        <span className="text-right text-xs text-slate-400">—</span>
-                      </div>
-                    ))}
-                    {(!recordReportEntry.entries || recordReportEntry.entries.length === 0) && (
-                      <div className="px-4 py-4 text-sm text-slate-500">No tests listed.</div>
-                    )}
+                    {(() => {
+                      const entries = recordReportEntry.entries || [];
+                      if (entries.length === 0) {
+                        return <div className="px-4 py-4 text-sm text-slate-500">No tests listed.</div>;
+                      }
+                      const byCategory = entries.reduce<Record<string, LabRecordEntry[]>>((acc, entry) => {
+                        const category = getTestCategory(entry.test_type);
+                        acc[category] = acc[category] || [];
+                        acc[category].push(entry);
+                        return acc;
+                      }, {});
+                      const categoryOrder = Object.keys(LAB_TEST_GROUPS);
+                      const orderedCategories = [
+                        ...categoryOrder.filter((cat) => byCategory[cat]?.length),
+                        ...Object.keys(byCategory).filter((cat) => !categoryOrder.includes(cat)),
+                      ];
+                      return orderedCategories.map((category) => (
+                        <div key={category} className="py-1">
+                          <div className="rounded bg-slate-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                            {category}
+                          </div>
+                          {byCategory[category].map((entry, idx) => {
+                            const entryKey = `${entry.id ?? "idx"}-${idx}-${entry.test_type}`;
+                            const selectedFlag = recordReportFlags[entryKey] ?? "none";
+                            return (
+                              <div
+                                key={`${entry.test_type}-${entry.id}-${idx}`}
+                                className="grid grid-cols-[2fr_1fr_1fr_1fr] items-center gap-2 px-4 py-3 text-sm text-slate-700"
+                              >
+                                <span className="font-semibold text-slate-900">{entry.test_type}</span>
+                                <span className="text-slate-700">{entry.summary || "—"}</span>
+                                <div className="flex items-center">
+                                  <select
+                                    value={selectedFlag}
+                                    onChange={(e) =>
+                                      setRecordReportFlags((prev) => ({
+                                        ...prev,
+                                        [entryKey]: e.target.value,
+                                      }))
+                                    }
+                                    className={`w-full rounded-full px-3 py-1 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-200 ${getFlagClasses(
+                                      selectedFlag
+                                    )}`}
+                                  >
+                                    {flagOptions.map((opt) => (
+                                      <option key={opt.value} value={opt.value}>
+                                        {opt.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <span className="text-right text-xs text-slate-400">—</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ));
+                    })()}
                   </div>
                 </div>
 
@@ -742,9 +823,6 @@ const LabModule = ({
                       onChange={(e) => setRecordReportComment(e.target.value)}
                       placeholder="Enter technician comment for this report"
                     />
-                  </div>
-                  <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
-                    Report template will appear here once provided.
                   </div>
                 </div>
               </div>
