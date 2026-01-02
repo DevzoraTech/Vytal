@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type {
   LabOrder,
   LabQueueEntry,
@@ -21,6 +21,19 @@ interface LabModuleProps {
   onRefreshTasks: () => void;
   fetchError?: string | null;
 }
+
+type RecordReportPayload = {
+  patientName: string;
+  patientIdentifier?: string | null;
+  patientAge?: number | null;
+  patientSex?: string | null;
+  tests: string[];
+  recordedBy?: string;
+  recordedAt?: string;
+  orderedAt?: string;
+  collectedAt?: string;
+  entries: LabRecordEntry[];
+};
 
 const exportToCsv = (filename: string, rows: Record<string, unknown>[]) => {
   if (!rows.length) return;
@@ -66,6 +79,10 @@ const LabModule = ({
   const [queueExportOpen, setQueueExportOpen] = useState(false);
   const [recordsExportOpen, setRecordsExportOpen] = useState(false);
   const [ordersExportOpen, setOrdersExportOpen] = useState(false);
+  const [recordActionOpenId, setRecordActionOpenId] = useState<string | number | null>(null);
+  const [recordReportEntry, setRecordReportEntry] = useState<RecordReportPayload | null>(null);
+  const [recordReportGeneratedAt, setRecordReportGeneratedAt] = useState<string | null>(null);
+  const [recordReportComment, setRecordReportComment] = useState<string>("");
   const handleExportQueue = () => {
     if (!queue.length) return;
     const rows = queue.map((entry) => ({
@@ -86,6 +103,7 @@ const LabModule = ({
     if (!records.length) return;
     const rows = records.map((entry) => ({
       id: entry.id,
+      patient_identifier: entry.patient_identifier || "",
       patient: entry.patient_name,
       test: entry.test_type,
       summary: entry.summary,
@@ -209,89 +227,213 @@ const LabModule = ({
     </section>
   );
 
-  const renderRecords = () => (
-    <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-      <div className="mb-4 flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-gray-900">Records</h2>
-          <p className="text-sm text-gray-500">
-            Completed lab entries forwarded to patient records.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="relative">
+  const renderRecords = () => {
+    const grouped = records.reduce<
+      Record<
+        string,
+        {
+          key: string;
+          patientName: string;
+          patientIdentifier?: string | null;
+          patientAge?: number | null;
+          patientSex?: string | null;
+          tests: string[];
+          recordedBy?: string;
+          recordedAt?: string;
+          orderedAt?: string;
+          collectedAt?: string;
+          entries: LabRecordEntry[];
+        }
+      >
+    >((acc, entry) => {
+      const key =
+        entry.patient_identifier?.toString?.() ||
+        entry.patient_name ||
+        `record-${entry.id}`;
+      if (!acc[key]) {
+        acc[key] = {
+          key,
+          patientName: entry.patient_name,
+          patientIdentifier: entry.patient_identifier ?? null,
+          patientAge: entry.patient_age ?? null,
+          patientSex: entry.patient_gender ?? null,
+          tests: [],
+          recordedBy: entry.recorded_by_name,
+          recordedAt: entry.recorded_at,
+          orderedAt: entry.recorded_at,
+          collectedAt: entry.recorded_at,
+          entries: [],
+        };
+      }
+      acc[key].tests.push(entry.test_type);
+      acc[key].entries.push(entry);
+      // keep most recent recorded_at for display
+      if (
+        entry.recorded_at &&
+        (!acc[key].recordedAt ||
+          Date.parse(entry.recorded_at) > Date.parse(acc[key].recordedAt || ""))
+      ) {
+        acc[key].recordedAt = entry.recorded_at;
+        acc[key].recordedBy = entry.recorded_by_name;
+      }
+      return acc;
+    }, {});
+    const groupedList = Object.values(grouped);
+
+    return (
+      <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Records</h2>
+            <p className="text-sm text-gray-500">
+              Completed lab entries forwarded to patient records.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <button
+                type="button"
+                className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+                onClick={() => setRecordsExportOpen((prev) => !prev)}
+              >
+                Export <span className="text-[10px]">▾</span>
+              </button>
+              {recordsExportOpen && (
+                <div className="absolute right-0 mt-2 w-40 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
+                  <button
+                    type="button"
+                    onClick={handleExportRecords}
+                    className="block w-full px-4 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    Export to CSV
+                  </button>
+                </div>
+              )}
+            </div>
             <button
               type="button"
-              className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
-              onClick={() => setRecordsExportOpen((prev) => !prev)}
+              className="text-sm font-semibold text-blue-600 hover:text-blue-700"
+              onClick={onRefreshRecords}
             >
-              Export <span className="text-[10px]">▾</span>
+              Refresh
             </button>
-            {recordsExportOpen && (
-              <div className="absolute right-0 mt-2 w-40 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
-                <button
-                  type="button"
-                  onClick={handleExportRecords}
-                  className="block w-full px-4 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  Export to CSV
-                </button>
-              </div>
-            )}
           </div>
-          <button
-            type="button"
-            className="text-sm font-semibold text-blue-600 hover:text-blue-700"
-            onClick={onRefreshRecords}
-          >
-            Refresh
-          </button>
         </div>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="text-left text-xs uppercase text-gray-500">
-            <tr>
-              <th className="pb-3 pr-3 font-semibold">Patient</th>
-              <th className="pb-3 pr-3 font-semibold">Test</th>
-              <th className="pb-3 pr-3 font-semibold">Summary</th>
-              <th className="pb-3 pr-3 font-semibold">Recorded by</th>
-              <th className="pb-3 pr-3 font-semibold">Date</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100 text-gray-700">
-            {records.length === 0 ? (
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200 text-sm">
+            <thead className="text-left text-xs uppercase text-gray-500">
               <tr>
-                <td colSpan={5} className="py-6 text-center text-sm">
-                  No lab records yet.
-                </td>
+                <th className="pb-3 pr-3 font-semibold">Patient</th>
+                <th className="pb-3 pr-3 font-semibold">Tests</th>
+                <th className="pb-3 pr-3 font-semibold">Recorded by</th>
+                <th className="pb-3 pr-3 font-semibold">Date</th>
+                <th className="pb-3 pr-3 font-semibold text-right">Action</th>
               </tr>
-            ) : (
-              records.map((entry) => (
-                <tr key={entry.id}>
-                  <td className="py-3 pr-3">
-                    <div className="font-semibold">{entry.patient_name}</div>
-                  </td>
-                  <td className="py-3 pr-3">{entry.test_type}</td>
-                  <td className="py-3 pr-3 text-sm text-gray-600">
-                    {entry.summary}
-                  </td>
-                  <td className="py-3 pr-3 text-sm text-gray-600">
-                    {entry.recorded_by_name}
-                  </td>
-                  <td className="py-3 pr-3 text-sm text-gray-500">
-                    {entry.recorded_at
-                      ? new Date(entry.recorded_at).toLocaleString()
-                      : "—"}
+            </thead>
+            <tbody className="divide-y divide-gray-100 text-gray-700">
+              {groupedList.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="py-6 text-center text-sm">
+                    No lab records yet.
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
+              ) : (
+                groupedList.map((group) => {
+                  const testsJoined = group.tests.join(", ");
+                  const truncatedTests =
+                    testsJoined.length > 60
+                      ? `${testsJoined.slice(0, 57)}...`
+                      : testsJoined;
+                  return (
+                    <tr key={group.key}>
+                  <td className="py-3 pr-3">
+                    <div className="font-semibold text-gray-900">
+                      {group.patientName}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {group.patientIdentifier || "—"}
+                      {group.patientSex ? (
+                        <>
+                          <span className="mx-1">•</span>
+                          {group.patientSex}
+                        </>
+                      ) : null}
+                      {group.patientAge !== null && group.patientAge !== undefined ? (
+                        <>
+                          <span className="mx-1">•</span>
+                          {group.patientAge}
+                        </>
+                      ) : null}
+                    </div>
+                  </td>
+                      <td className="py-3 pr-3 text-sm text-gray-600">
+                        {truncatedTests || "—"}
+                      </td>
+                      <td className="py-3 pr-3 text-sm text-gray-600">
+                        {group.recordedBy || "—"}
+                      </td>
+                      <td className="py-3 pr-3 text-sm text-gray-500">
+                        {group.recordedAt
+                          ? new Date(group.recordedAt).toLocaleString()
+                          : "—"}
+                      </td>
+                      <td className="py-3 pr-3 text-right">
+                        <div className="relative inline-flex">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setRecordActionOpenId((prev) =>
+                                prev === group.key ? null : group.key as any
+                              )
+                            }
+                            className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50"
+                          >
+                            <img
+                              src="vertical_more.png"
+                              alt="more"
+                              width={16}
+                              height={16}
+                            />
+                          </button>
+                          {recordActionOpenId === group.key && (
+                            <div className="absolute right-0 z-20 mt-2 w-40 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
+                              <button
+                                type="button"
+                                className="block w-full px-4 py-2 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                                onClick={() => {
+                                  setRecordActionOpenId(null);
+                                  setRecordReportEntry({
+                                    patientName: group.patientName,
+                                    patientIdentifier: group.patientIdentifier,
+                                    patientAge: group.patientAge,
+                                    patientSex: group.patientSex,
+                                    tests: group.tests,
+                                    recordedBy: group.recordedBy,
+                                    recordedAt: group.recordedAt,
+                                    orderedAt: group.orderedAt,
+                                    collectedAt: group.collectedAt,
+                                    entries: group.entries,
+                                  });
+                                  setRecordReportGeneratedAt(new Date().toISOString());
+                                  setRecordReportComment("");
+                                }}
+                              >
+                                View report
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    );
+  };
 
   const renderOrders = () => (
     <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -455,6 +597,183 @@ const LabModule = ({
           ? renderRecords()
           : renderOrders()}
       </div>
+      {recordReportEntry && (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-black/30"
+            onClick={() => setRecordReportEntry(null)}
+            role="presentation"
+          />
+          <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+            <div
+              className="w-full max-w-5xl overflow-hidden rounded-2xl bg-white shadow-2xl max-h-[90vh] overflow-y-auto"
+              style={{ margin: "1cm 2.54cm 2.54cm 2.54cm" }}
+            >
+              <div className="border-b border-slate-200 bg-white px-6 py-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <img src="/paleologo.png" alt="Paleo Medicals" className="h-12 w-12 object-contain" />
+                    <div>
+                      <div className="text-lg font-extrabold tracking-wide text-[#1d3f72]">
+                        PALEO MEDICALS
+                      </div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Doctor to Community
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right text-[11px] text-slate-600">
+                    <div className="font-semibold text-slate-800">0705 011745 / 0786 053163</div>
+                    <div>admin@paleomedicals.health</div>
+                    <div>https://paleomedicals.health</div>
+                  </div>
+                </div>
+                <div className="mt-2 text-[11px] font-semibold text-slate-600">
+                  Buziga, Lukuli Link
+                </div>
+                <div className="text-[11px] font-semibold text-slate-600">
+                  General Medicine, Pediatrics, Obstetrics, Gynecology, Lab and Ultra Sound scan
+                </div>
+              </div>
+
+              <div className="grid grid-cols-[1.1fr_0.35fr_1.1fr] items-stretch gap-3 border-b border-slate-200 bg-white px-6 py-4">
+                <div className="rounded-[2px] border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                  <div className="text-xs font-semibold text-slate-500">Name</div>
+                  <div className="text-base font-semibold text-slate-900">
+                    {recordReportEntry.patientName || "—"}
+                  </div>
+                  <div className="mt-1 grid grid-cols-2 gap-2 text-[11px] text-slate-600">
+                    <span className="col-span-2">Age: {recordReportEntry.patientAge ?? "—"}</span>
+                    <span className="col-span-2">Sex: {recordReportEntry.patientSex || "—"}</span>
+                    <span className="col-span-2">
+                      PID: {recordReportEntry.patientIdentifier || "—"}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center justify-center rounded-[2px] border border-slate-200 bg-slate-50 p-3 text-center text-[11px] font-semibold text-slate-500 shadow-sm">
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(
+                      "https://paleomedical.health"
+                    )}`}
+                    alt="QR"
+                    className="h-28 w-28 object-contain"
+                    onError={(e) => {
+                      const target = e.currentTarget as HTMLImageElement;
+                      target.style.display = "none";
+                    }}
+                  />
+                </div>
+                <div className="rounded-[2px] border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                  <div className="text-xs font-semibold text-slate-500">Sample Collected At</div>
+                  <div className="text-sm font-semibold text-slate-900">Paleo Medicals Hosp</div>
+                  <div className="mt-2 text-xs font-semibold text-slate-500">Ref. By</div>
+                  <div className="text-sm font-semibold text-slate-900">
+                    {recordReportEntry.recordedBy || "—"}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-4 border-b border-slate-200 bg-white px-6 py-3 text-[11px] text-slate-600">
+                <div>
+                  <span className="font-semibold text-slate-700">Ordered on:</span>{" "}
+                  {recordReportEntry.orderedAt
+                    ? new Date(recordReportEntry.orderedAt).toLocaleString()
+                    : "—"}
+                </div>
+                <div>
+                  <span className="font-semibold text-slate-700">Collected on:</span>{" "}
+                  {recordReportEntry.collectedAt
+                    ? new Date(recordReportEntry.collectedAt).toLocaleString()
+                    : "—"}
+                </div>
+                <div>
+                  <span className="font-semibold text-slate-700">Reported on:</span>{" "}
+                  {recordReportEntry.recordedAt
+                    ? new Date(recordReportEntry.recordedAt).toLocaleString()
+                    : "—"}
+                </div>
+              </div>
+
+              <div className="px-6 py-4">
+                <div className="mb-4 flex items-center justify-between">
+                  <h3 className="text-base font-semibold text-slate-900">Investigations</h3>
+                  <button
+                    type="button"
+                    className="rounded-full border border-slate-200 px-3 py-1 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                    onClick={() => setRecordReportEntry(null)}
+                  >
+                    Close
+                  </button>
+                </div>
+                <div className="rounded-xl border border-slate-200">
+                  <div className="grid grid-cols-[2fr_1fr_1fr_1fr] gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    <span>Investigation</span>
+                    <span>Result</span>
+                    <span>Flag</span>
+                    <span className="text-right">Biological Reference Range / Unit</span>
+                  </div>
+                  <div className="divide-y divide-slate-100">
+                    {(recordReportEntry.entries || []).map((entry, idx) => (
+                      <div
+                        key={`${entry.test_type}-${entry.id}-${idx}`}
+                        className="grid grid-cols-[2fr_1fr_1fr_1fr] items-center gap-2 px-4 py-3 text-sm text-slate-700"
+                      >
+                        <span className="font-semibold text-slate-900">{entry.test_type}</span>
+                        <span className="text-slate-700">{entry.summary || "—"}</span>
+                        <span className="text-slate-500">—</span>
+                        <span className="text-right text-xs text-slate-400">—</span>
+                      </div>
+                    ))}
+                    {(!recordReportEntry.entries || recordReportEntry.entries.length === 0) && (
+                      <div className="px-4 py-4 text-sm text-slate-500">No tests listed.</div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-4 space-y-3">
+                  <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                      Comment
+                    </label>
+                    <textarea
+                      className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                      rows={3}
+                      value={recordReportComment}
+                      onChange={(e) => setRecordReportComment(e.target.value)}
+                      placeholder="Enter technician comment for this report"
+                    />
+                  </div>
+                  <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
+                    Report template will appear here once provided.
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t border-slate-200 px-6 py-4">
+                <div className="flex flex-wrap items-start justify-between gap-6">
+                  <div className="flex-1">
+                    <div className="text-xs font-semibold text-slate-500">Signature</div>
+                    <div className="mt-1 text-lg text-slate-400">.........................</div>
+                    <div className="mt-1 text-sm font-semibold text-slate-900">
+                      {recordReportEntry.recordedBy || "Laboratory Technician"}
+                    </div>
+                    <div className="text-xs text-slate-600">Laboratory Technician</div>
+                  </div>
+                  <div className="text-right text-[11px] text-slate-600">
+                    <div>
+                      Generated on:{" "}
+                      {recordReportGeneratedAt
+                        ? new Date(recordReportGeneratedAt).toLocaleString()
+                        : "—"}
+                    </div>
+                    <div>Page 1 of 1</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </main>
   );
 };
