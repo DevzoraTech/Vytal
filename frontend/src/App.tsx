@@ -3657,7 +3657,7 @@ function App() {
                     <input
                       type="number"
                       min="1"
-                      className="w-16 rounded-xl border border-slate-200 px-3 py-1 text-center text-sm"
+                      className="w-16 rounded-xl border border-slate-200 px-3 py-1 text-left text-sm"
                       placeholder="Days"
                       value={carePlanNumDays || ""}
                       onChange={(e) => setCarePlanNumDays(parseInt(e.target.value) || 0)}
