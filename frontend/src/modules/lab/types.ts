@@ -14,7 +14,10 @@ export interface LabQueueEntry {
 
 export interface LabRecordEntry {
   id: number;
+  patient_identifier?: string | null;
   patient_name: string;
+  patient_age?: number | null;
+  patient_gender?: string | null;
   test_type: string;
   summary: string;
   recorded_at: string;
@@ -57,22 +60,56 @@ export interface LabTask {
   created_at: string;
 }
 
-export const LAB_TESTS = [
-  "Blood Slide",
-  "Widal Typhoid IgG",
-  "H. pylori Ab",
-  "HCT",
-  "RPR / VDRL",
-  "HBsAg",
-  "BAT",
-  "H. pylori Ag",
-  "HCG Urine",
-  "HCG Serum",
-  "MRDT",
-  "Blood Group",
-  "Urinalysis",
-  "Stool Analysis",
-  "RBS / FBS",
-  "Electrolytes",
-  "Rheumatoid Factor",
-] as const;
+export const LAB_TEST_GROUPS = {
+  Biochemistry: [
+    "Urinalysis",
+    "Liver Function",
+    "Renal Function",
+    "Lipid Profile",
+    "Electrolytes",
+    "RBS / FBS",
+    "HbA1c",
+    "CRP",
+    "Thyroid",
+    "D-dimers",
+  ],
+  Parasitology: [
+    "Blood Slide",
+    "Stool Analysis",
+    "Blood Examination",
+    "Thin Smear",
+  ],
+  Haematology: [
+    "CBC",
+    "ESR",
+    "HCT",
+    "Sickle Cells",
+    "Blood Group",
+  ],
+  Immunology: [
+    "Widal Typhoid IgG",
+    "HCG Urine",
+    "HCG Serum",
+    "BAT",
+    "H. pylori Ab",
+    "H. pylori Ag",
+    "PSA",
+    "Fertility",
+    "Candida marker",
+    "RPR / VDRL",
+    "Syphilis",
+    "Rheumatoid Factor",
+    "Hep B",
+    "HBsAg",
+    "HIV",
+    "Herps",
+    "Covid",
+  ],
+  Microbiology: ["Urine Culture", "Blood Culture"],
+  Genetics: ["DNA Tests"],
+  Respiratory: ["TB tests / Sputum"],
+} as const;
+
+export type LabTest = (typeof LAB_TEST_GROUPS)[keyof typeof LAB_TEST_GROUPS][number];
+
+export const LAB_TESTS: LabTest[] = Object.values(LAB_TEST_GROUPS).flat();

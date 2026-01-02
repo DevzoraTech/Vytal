@@ -183,6 +183,8 @@ class LabResultSerializer(serializers.ModelSerializer):
     payload = serializers.JSONField(required=False)
     patient_name = serializers.SerializerMethodField()
     patient_identifier = serializers.SerializerMethodField()
+    patient_age = serializers.SerializerMethodField()
+    patient_gender = serializers.SerializerMethodField()
     admission_id = serializers.IntegerField(source='admission.id', read_only=True)
     triage_entry_id = serializers.IntegerField(source='triage_entry.id', read_only=True)
     recorded_by_name = serializers.CharField(required=False, allow_blank=True)
@@ -201,6 +203,8 @@ class LabResultSerializer(serializers.ModelSerializer):
             'patient',
             'patient_name',
             'patient_identifier',
+            'patient_age',
+            'patient_gender',
             'admission',
             'admission_id',
             'triage_entry',
@@ -225,6 +229,31 @@ class LabResultSerializer(serializers.ModelSerializer):
 
     def get_patient_identifier(self, obj):
         return getattr(obj.patient, "patient_identifier", None)
+
+    def get_patient_age(self, obj):
+        # Prefer patient age; fall back to admission or triage if needed
+        patient = getattr(obj, "patient", None)
+        if patient and getattr(patient, "age", None) is not None:
+            return patient.age
+        triage = getattr(obj, "triage_entry", None)
+        if triage and getattr(triage, "age", None) is not None:
+            return triage.age
+        admission = getattr(obj, "admission", None)
+        if admission and getattr(admission, "patient_age", None) is not None:
+            return admission.patient_age
+        return None
+
+    def get_patient_gender(self, obj):
+        patient = getattr(obj, "patient", None)
+        if patient and getattr(patient, "gender", None):
+            return patient.gender
+        triage = getattr(obj, "triage_entry", None)
+        if triage and getattr(triage, "sex", None):
+            return triage.sex
+        admission = getattr(obj, "admission", None)
+        if admission and getattr(admission, "patient_gender", None):
+            return admission.patient_gender
+        return None
 
 
 class LabOrderSerializer(serializers.ModelSerializer):

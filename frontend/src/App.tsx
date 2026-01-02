@@ -38,6 +38,7 @@ import {
   type LabTask,
   type LabTab,
   LAB_TESTS,
+  LAB_TEST_GROUPS,
 } from "./modules/lab/types";
 import type { CarePlan, ConsultationEvent } from "./modules/consultation/types";
 import { CARD_CLASS, CARD_SECTION_CLASS } from "./ui/styles";
@@ -474,6 +475,8 @@ function App() {
   const [scheduleManagerItems, setScheduleManagerItems] = useState<(ScheduleItem & { locked?: boolean })[]>([]);
   const [scheduleManagerLoading, setScheduleManagerLoading] = useState(false);
   const [actionMenuOpenId, setActionMenuOpenId] = useState<number | null>(null);
+  const [labRecentTests, setLabRecentTests] = useState<string[]>([]);
+  const [labRecentOrdering, setLabRecentOrdering] = useState<string[]>([]);
   const [extendPlanOpen, setExtendPlanOpen] = useState(false);
   const [extendPlanNumDays, setExtendPlanNumDays] = useState<number>(0);
   const [extendPlanSchedule, setExtendPlanSchedule] = useState<ScheduleItem[]>([]);
@@ -916,14 +919,30 @@ function App() {
           ? (raw as any).results
           : [];
       setLabRecords(
-        payload.map((entry: any) => ({
-          id: entry.id,
-          patient_name: entry.patient_name || entry.patient || "Patient",
-          test_type: entry.test_type,
-          summary: entry.summary,
-          recorded_at: entry.recorded_at,
-          recorded_by_name: entry.recorded_by_name,
-        }))
+        payload.map((entry: any) => {
+          const match = labQueue.find((q) => {
+            const pid = q.patient_identifier?.toString?.();
+            const name = (q.name || "").toLowerCase();
+            const entryPid = entry.patient_identifier?.toString?.() ?? entry.patient_id?.toString?.();
+            const entryName = (entry.patient_name || entry.patient || "").toLowerCase();
+            return (entryPid && pid && entryPid === pid) || (!!entryName && entryName === name);
+          });
+          const ageFromMatch =
+            match && match.age !== undefined && match.age !== null
+              ? Number(match.age) || match.age
+              : null;
+          return {
+            id: entry.id,
+            patient_name: entry.patient_name || entry.patient || "Patient",
+            patient_identifier: entry.patient_identifier ?? entry.patient_id ?? match?.patient_identifier ?? null,
+            patient_age: entry.patient_age ?? entry.age ?? ageFromMatch ?? null,
+            patient_gender: entry.patient_gender ?? entry.gender ?? entry.sex ?? match?.sex ?? null,
+            test_type: entry.test_type,
+            summary: entry.summary,
+            recorded_at: entry.recorded_at,
+            recorded_by_name: entry.recorded_by_name,
+          };
+        })
       );
       setLabFetchError(null);
     } catch (err) {
@@ -933,7 +952,7 @@ function App() {
         err instanceof Error ? err.message : "Unable to load lab records"
       );
     }
-  }, [token]);
+  }, [token, labQueue]);
 
   const loadLabOrders = useCallback(async () => {
     if (!token) {
@@ -1294,6 +1313,20 @@ function App() {
     const closeActionMenus = () => setActionMenuOpenId(null);
     document.addEventListener("click", closeActionMenus);
     return () => document.removeEventListener("click", closeActionMenus);
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("lab-recent-tests");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          setLabRecentTests(parsed.filter((t) => typeof t === "string"));
+        }
+      }
+    } catch {
+      // ignore
+    }
   }, []);
 
   useEffect(() => {
@@ -1871,6 +1904,7 @@ function App() {
     (entry: LabQueueEntry) => {
       setLabModalOpen(true);
       setLabError(null);
+      setLabRecentOrdering(labRecentTests);
       const nowLocal = new Date();
       const nowLocalIso = new Date(
         nowLocal.getTime() - nowLocal.getTimezoneOffset() * 60000
@@ -1908,6 +1942,16 @@ function App() {
       setStoolForm(draft.stool ?? defaultStool);
       setElectrolytesForm(draft.electrolytes ?? defaultElectrolytes);
       setLabError(null);
+      setLabRecentTests((prev) => {
+        const next = [test, ...prev.filter((t) => t !== test)];
+        const limited = next.slice(0, 20);
+        try {
+          localStorage.setItem("lab-recent-tests", JSON.stringify(limited));
+        } catch {
+          // ignore storage errors
+        }
+        return limited;
+      });
     },
     [labTestDrafts, defaultElectrolytes, defaultStool, defaultUrinalysis]
   );
@@ -3657,7 +3701,7 @@ function App() {
                     <input
                       type="number"
                       min="1"
-                      className="w-16 rounded-xl border border-slate-200 px-3 py-1 text-center text-sm"
+                      className="w-16 rounded-xl border border-slate-200 px-3 py-1 text-left text-sm"
                       placeholder="Days"
                       value={carePlanNumDays || ""}
                       onChange={(e) => setCarePlanNumDays(parseInt(e.target.value) || 0)}
@@ -5110,32 +5154,81 @@ function App() {
                 Test list
               </p>
               <div className="space-y-2">
-                {LAB_TESTS.map((test) => {
-                  const selected = labResultForm.testType === test;
-                  const hasCompleted =
-                    labResultForm.triageEntryId &&
-                    labCompletedTests[labResultForm.triageEntryId]?.has(test);
-                  return (
-                    <button
-                      key={test}
-                      type="button"
-                      className={`flex w-full items-center justify-between rounded-xl border px-3 py-2 text-sm font-semibold ${selected
-                        ? "border-blue-300 bg-blue-50 text-blue-700"
-                        : "border-slate-200 bg-white text-slate-800 hover:border-slate-300"
-                        }`}
-                      onClick={() => loadDraftForTest(test)}
-                    >
-                      <span className="flex items-center gap-2">
-                        {test}
-                        {hasCompleted && (
-                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
-                            ✓ Recorded
-                          </span>
-                        )}
-                      </span>
-                    </button>
+                {(() => {
+                  const recencyRank: Record<string, number> = {};
+                  labRecentOrdering.forEach((test, idx) => {
+                    recencyRank[test] = idx;
+                  });
+                  const groupEntries = Object.entries(LAB_TEST_GROUPS).map(
+                    ([category, tests], idx) => {
+                      const groupRecency = Math.min(
+                        ...tests.map(
+                          (t) => recencyRank[t] ?? Number.MAX_SAFE_INTEGER
+                        )
+                      );
+                      return { category, tests, idx, groupRecency };
+                    }
                   );
-                })}
+                  groupEntries.sort((a, b) => {
+                    if (a.groupRecency !== b.groupRecency) {
+                      return a.groupRecency - b.groupRecency;
+                    }
+                    return a.idx - b.idx;
+                  });
+                  return groupEntries.map(({ category, tests }) => {
+                    const originalOrderIndex = new Map(
+                      tests.map((t, i) => [t, i])
+                    );
+                    const sortedTests = [...tests].sort((a, b) => {
+                      const ra = recencyRank[a] ?? Number.MAX_SAFE_INTEGER;
+                      const rb = recencyRank[b] ?? Number.MAX_SAFE_INTEGER;
+                      if (ra !== rb) return ra - rb;
+                      return (
+                        (originalOrderIndex.get(a) ?? 0) -
+                        (originalOrderIndex.get(b) ?? 0)
+                      );
+                    });
+                    return (
+                      <div
+                        key={category}
+                        className="space-y-1 rounded-xl border border-slate-200 bg-white/80 p-2"
+                      >
+                        <p className="px-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                          {category}
+                        </p>
+                        {sortedTests.map((test) => {
+                          const selected = labResultForm.testType === test;
+                          const hasCompleted =
+                            labResultForm.triageEntryId &&
+                            labCompletedTests[labResultForm.triageEntryId]?.has(
+                              test
+                            );
+                          return (
+                            <button
+                              key={test}
+                              type="button"
+                              className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-[12px] font-semibold ${
+                                selected
+                                  ? "border-[#34b25c] bg-[#c2f4d2] text-blue-700"
+                                  : "border-slate-200 bg-white text-slate-800 hover:bg-[#dcf9e5]"
+                              }`}
+                              onClick={() => loadDraftForTest(test)}
+                            >
+                              <span className="flex items-center gap-2">
+                                {test}
+                                {hasCompleted && (
+                                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                                    ✓ Recorded
+                                  </span>
+                                )}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  });
+                })()}
               </div>
             </div>
 
@@ -5380,11 +5473,7 @@ function App() {
                       "Electrolytes",
                       "Urinalysis",
                       "Stool Analysis",
-                    ].includes(labResultForm.testType) && (
-                      <p className="text-sm text-slate-500">
-                        Add any clinical notes or supporting details below.
-                      </p>
-                    )}
+                    ]}
                 </div>
               </div>
 
@@ -5392,7 +5481,7 @@ function App() {
                 <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                   <div className="space-y-2">
                     <label className="text-xs font-semibold text-slate-500">
-                      Additional notes
+                      Comment
                     </label>
                     <textarea
                       className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
@@ -5411,11 +5500,8 @@ function App() {
                           return next;
                         })
                       }
-                      placeholder="Capture supporting notes or clinician comments."
+                      placeholder="Entering supporting comments..."
                     />
-                    <p className="text-xs text-slate-500">
-                      Timestamp is captured automatically on save.
-                    </p>
                   </div>
                 </div>
               )}
