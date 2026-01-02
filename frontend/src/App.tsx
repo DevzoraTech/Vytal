@@ -802,6 +802,26 @@ function App() {
     [user]
   );
 
+  const readApiErrorMessage = useCallback(async (response: Response, fallback: string) => {
+    try {
+      const detail = (await response.json()) as Record<string, unknown>;
+      if (typeof detail.detail === "string") {
+        return detail.detail;
+      }
+      const firstKey = Object.keys(detail)[0];
+      const value = firstKey ? detail[firstKey] : null;
+      if (typeof value === "string") {
+        return `${firstKey ? `${firstKey}: ` : ""}${value}`;
+      }
+      if (Array.isArray(value) && typeof value[0] === "string") {
+        return `${firstKey ? `${firstKey}: ` : ""}${value[0]}`;
+      }
+    } catch {
+      // ignore parse failures
+    }
+    return fallback;
+  }, []);
+
   const loadPatients = useCallback(
     async (term = "") => {
       if (!token || !hasPatientAccess) {
@@ -858,7 +878,8 @@ function App() {
         headers: { Authorization: `Token ${token}` },
       });
       if (!response.ok) {
-        throw new Error("Unable to load lab queue");
+        const detail = await readApiErrorMessage(response, "Unable to load lab queue");
+        throw new Error(`${detail} (status ${response.status})`);
       }
       const raw = (await response.json()) as unknown;
       const payload = Array.isArray(raw)
@@ -892,12 +913,11 @@ function App() {
       setLabFetchError(null);
     } catch (err) {
       console.error(err);
-      setLabQueue([]);
       setLabFetchError(
         err instanceof Error ? err.message : "Unable to load lab queue"
       );
     }
-  }, [token]);
+  }, [token, readApiErrorMessage]);
 
   const loadLabRecords = useCallback(async () => {
     if (!token) {
@@ -910,7 +930,8 @@ function App() {
         headers: { Authorization: `Token ${token}` },
       });
       if (!response.ok) {
-        throw new Error("Unable to load lab records");
+        const detail = await readApiErrorMessage(response, "Unable to load lab records");
+        throw new Error(`${detail} (status ${response.status})`);
       }
       const raw = (await response.json()) as unknown;
       const payload = Array.isArray(raw)
@@ -947,12 +968,11 @@ function App() {
       setLabFetchError(null);
     } catch (err) {
       console.error(err);
-      setLabRecords([]);
       setLabFetchError(
         err instanceof Error ? err.message : "Unable to load lab records"
       );
     }
-  }, [token, labQueue]);
+  }, [token, labQueue, readApiErrorMessage]);
 
   const loadLabOrders = useCallback(async () => {
     if (!token) {
@@ -968,7 +988,8 @@ function App() {
         }
       );
       if (!response.ok) {
-        throw new Error("Unable to load lab orders");
+        const detail = await readApiErrorMessage(response, "Unable to load lab orders");
+        throw new Error(`${detail} (status ${response.status})`);
       }
       const raw = (await response.json()) as unknown;
       const payload = Array.isArray(raw)
@@ -997,12 +1018,11 @@ function App() {
       setLabFetchError(null);
     } catch (err) {
       console.error(err);
-      setLabOrders([]);
       setLabFetchError(
         err instanceof Error ? err.message : "Unable to load lab orders"
       );
     }
-  }, [token]);
+  }, [token, readApiErrorMessage]);
 
   const loadLabTasks = useCallback(async () => {
     if (!token) {
@@ -1017,7 +1037,8 @@ function App() {
         }
       );
       if (!response.ok) {
-        throw new Error("Unable to load lab tasks");
+        const detail = await readApiErrorMessage(response, "Unable to load lab tasks");
+        throw new Error(`${detail} (status ${response.status})`);
       }
       const raw = (await response.json()) as unknown;
       const payload = Array.isArray(raw)
@@ -1039,9 +1060,9 @@ function App() {
       );
     } catch (err) {
       console.error(err);
-      setLabTasks([]);
+      setLabFetchError(err instanceof Error ? err.message : "Unable to load lab tasks");
     }
-  }, [token]);
+  }, [token, readApiErrorMessage]);
 
   useEffect(() => {
     if (token && hasPatientAccess) {
