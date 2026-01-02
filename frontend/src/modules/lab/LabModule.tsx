@@ -63,15 +63,14 @@ const exportToCsv = (filename: string, rows: Record<string, unknown>[]) => {
   URL.revokeObjectURL(url);
 };
 
-const testCategoryLookup: Record<string, string> = Object.entries(LAB_TEST_GROUPS).reduce(
-  (acc, [category, tests]) => {
-    tests.forEach((test) => {
-      acc[test] = category;
-    });
-    return acc;
-  },
-  {}
-);
+const testCategoryLookup: Record<string, string> = Object.entries(LAB_TEST_GROUPS).reduce<
+  Record<string, string>
+>((acc, [category, tests]) => {
+  tests.forEach((test) => {
+    acc[test] = category;
+  });
+  return acc;
+}, {});
 
 const getTestCategory = (testType: string) => testCategoryLookup[testType] ?? "Other";
 
