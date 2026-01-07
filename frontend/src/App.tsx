@@ -5137,8 +5137,6 @@ function App() {
       { key: "casts", label: "Casts" },
     ] as const;
 
-    const [isSaving, setIsSaving] = useState(false);
-
     const stoolFields = [
       { key: "appearance", label: "Appearance" },
       { key: "colour", label: "Colour" },
@@ -5558,7 +5556,7 @@ function App() {
   if (bootstrapping) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#F3F4F6] text-[#4B5563]">
-        Preparing your workspace…
+        Vytal is initializing…
       </div>
     );
   }
