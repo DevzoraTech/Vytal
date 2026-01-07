@@ -153,11 +153,6 @@ const LabModule = ({
     setOrdersExportOpen(false);
   };
 
-  .page {
-  page-break-inside: avoid; /* optional: avoid breaking mid-section */
-  page-break-after: always; /* create a new page after this section */
-  }
-
   const renderQueue = () => (
     <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
       <div className="mb-4 flex items-center justify-between">
@@ -678,6 +673,8 @@ const LabModule = ({
                   paddingLeft: "5mm",
                   boxSizing: "border-box",
                   backgroundColor: "#fff",
+                  pageBreakInside: "avoid",
+                  pageBreakAfter: "always",
                 }}
                 >
 
