@@ -828,10 +828,10 @@ const LabModule = ({
                                       key={`${entry.test_type}-${entry.id}-${idx}`}
                                       className={`grid grid-cols-[2fr_1fr_1fr_1fr] items-center gap-2 px-4 py-0.5 text-[12px] text-slate-700 ${
                                         idx % 2 === 0 ? "bg-white print:bg-white" : "bg-gray-100 print:bg-gray-100"
-                                        style={{
+                                      }`}
+                                      style={{
                                         breakInside: "avoid",   // prevent splitting mid-row
                                       }}
-                                      }`}
                                     >
                                       <span className="font-semibold text-slate-900">{entry.test_type}</span>
                                       <span className="text-slate-700">{entry.summary || "—"}</span>
