@@ -4095,7 +4095,7 @@ function App() {
                 setPatientSubPage("Patient Directory");
               }}
             >
-              Close
+              ×
             </button>
           </header>
 
@@ -5129,6 +5129,9 @@ function App() {
       { key: "yeast_cells", label: "Yeast cells" },
       { key: "casts", label: "Casts" },
     ] as const;
+
+    const [isSaving, setIsSaving] = useState(false);
+
     const stoolFields = [
       { key: "appearance", label: "Appearance" },
       { key: "colour", label: "Colour" },
@@ -5159,7 +5162,7 @@ function App() {
                 setLabError(null);
               }}
             >
-              Close
+              ×
             </button>
           </div>
 
