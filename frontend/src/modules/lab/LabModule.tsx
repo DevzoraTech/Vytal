@@ -154,6 +154,7 @@ const LabModule = ({
     setOrdersExportOpen(false);
   };
 
+
   const renderQueue = () => (
     <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
       <div className="mb-4 flex items-center justify-between">
@@ -372,7 +373,10 @@ const LabModule = ({
                     <tr key={group.key}>
                   <td className="py-3 pr-3">
                     <div className="font-semibold text-gray-900">
-                      {group.patientName}
+                      {group.patientName?.includes(",")
+                      ? group.patientName.split(",").reverse().join(" ").trim()
+                      : group.patientName }
+
                     </div>
                     <div className="text-xs text-gray-500">
                       {group.patientIdentifier || "—"}
@@ -586,6 +590,7 @@ const LabModule = ({
   );
 
   return (
+
     <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto flex w-full max-w-screen-2xl flex-col gap-6">
         <div className="flex gap-4 border-b border-gray-300 pb-2 text-sm font-medium">
@@ -627,230 +632,280 @@ const LabModule = ({
           : renderOrders()}
       </div>
       {recordReportEntry && (
-        <>
-          <div
-            className="fixed inset-0 z-40 bg-black/30"
-            onClick={() => {
-              setRecordReportEntry(null);
-              setRecordReportFlags({});
-            }}
-            role="presentation"
-          />
-          <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <>
+            {/* Backdrop */}
             <div
-              className="w-full max-w-5xl overflow-hidden rounded-2xl bg-white shadow-2xl max-h-[90vh] overflow-y-auto"
-              style={{ margin: "1cm 2.54cm 2.54cm 2.54cm" }}
+              className="fixed inset-0 z-40 bg-black/60"
+              role="presentation"
+              onClick={() => {
+                setRecordReportEntry(null);
+                setRecordReportFlags({});
+              }}
+            />
+            {/* Scrollable viewport */}
+            <div className="fixed inset-0 z-50 overflow-y-auto">
+              <div className="flex justify-center py-10">
+                {/* Close button */}
+            <button
+              type="button"
+              className="fixed top-4 right-4 z-60 text-2xl font-semibold text-white print:hidden"
+              onClick={() => {
+                setRecordReportEntry(null);
+                setRecordReportFlags({});
+              }}
+              aria-label="Close report"
             >
-              <div className="mb-4 flex items-center justify-between">
-                  <button
-                    type="button"
-                    className="rounded-full border border-slate-200 px-3 py-1 text-sm font-semibold text-slate-600 hover:bg-slate-50"
-                    onClick={() => {
-                      setRecordReportEntry(null);
-                      setRecordReportFlags({});
-                    }}
-                  >
-                    Close
-                  </button>
-                </div>
-              <div className="border-b border-slate-200 bg-white px-6 py-4">
-                <div className="relative flex items-start justify-center gap-4">
-                  <div className="flex items-center justify-center gap-3">
-                    <img src="/paleologo.png" alt="Paleo Medicals" className="h-16 w-16 object-contain" />
-                    <div className="flex flex-col items-start text-left">
-                      <div className="calibri uppercase text-[20px] font-extrabold tracking-wide text-[#008000]">
-                        PALEO MEDICALS
-                      </div>
-                      <div className="text-[13px] font-medium tracking-wide text-slate-500 italic">
-                        Doctor to Community
-                      </div>
-                      <div className="text-[14px] font-medium text-slate-600">
-                        Buziga, Lukuli Link
-                      </div>
-                    </div>
-                  </div>
-                  <div className="absolute right-0 top-0 text-right text-[11px] text-slate-600">
-                    <div className="font-semibold text-slate-800">0705 011745 / 0786 053163</div>
-                    <div>admin@paleomedicals.health</div>
-                    <div>https://paleomedicals.health</div>
-                  </div>
-                </div>
-                <div className="text-[15px] text-center font-semibold text-slate-600">
-                  General Medicine, Pediatrics, Obstetrics, Gynecology, Lab and Ultra Sound scan
-                </div>
-              </div>
+              ×
+            </button>
 
-              <h3 className="text-base font-semibold text-center mt-2 uppercase text-slate-900">Laboratory Report</h3>
+            {/* Save / Print button */}
+            <button
+              type="button"
+              className="fixed bottom-4 right-4 z-60 rounded border px-4 py-2 text-sm font-semibold text-white print:hidden"
+              onClick={() => window.print()}
+            >
+              Save / Print
+            </button>
+                {/* A4 page */}
+                <div className="w-[210mm] min-h-[297mm] bg-white" 
+                style={{
+                  width: "210mm",
+                  minHeight: "297mm",
+                  paddingTop: "20mm",
+                  paddingRight: "5mm",
+                  paddingBottom: "5mm",
+                  paddingLeft: "5mm",
+                  boxSizing: "border-box",
+                  backgroundColor: "#fff",
+                }}
+                >
 
-              <div className="grid grid-cols-[1.1fr_0.35fr_1.1fr] items-stretch gap-3 border-b border-slate-200 bg-white px-6 py-4">
-                <div className="rounded-[2px] border border-slate-200 bg-white px-4 py-3 shadow-sm">
-                  <div className="text-xs font-semibold text-slate-500">Name</div>
-                  <div className="text-base font-semibold text-slate-900">
-                    {recordReportEntry.patientName || "—"}
-                  </div>
-                  <div className="mt-1 grid grid-cols-2 gap-2 text-[13px] text-slate-600">
-                    <span className="col-span-2">Age: {recordReportEntry.patientAge ?? "—"}</span>
-                    <span className="col-span-2">Sex: {recordReportEntry.patientSex || "—"}</span>
-                    <span className="col-span-2">
-                      PID: {recordReportEntry.patientIdentifier || "—"}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex items-center justify-center rounded-[2px] border border-slate-200 bg-slate-50 p-3 text-center text-[11px] font-semibold text-slate-500 shadow-sm">
-                  <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(
-                      "https://paleomedical.health"
-                    )}`}
-                    alt="QR"
-                    className="h-28 w-28 object-contain"
-                    onError={(e) => {
-                      const target = e.currentTarget as HTMLImageElement;
-                      target.style.display = "none";
-                    }}
-                  />
-                </div>
-                <div className="rounded-[2px] border border-slate-200 bg-white px-4 py-3 shadow-sm">
-                  <div className="text-xs font-semibold text-slate-500">Sample Collected At</div>
-                  <div className="text-sm font-semibold text-slate-900">Paleo Medicals Hosp</div>
-                  <div className="mt-2 text-xs font-semibold text-slate-500">Ref. By</div>
-                  <div className="text-sm font-semibold text-slate-900">
-                    {recordReportEntry.recordedBy || "—"}
-                  </div>
-                </div>
-              </div>
+                  <div className="border-b border-slate-200 bg-white px-6 py-4 relative">
+                    <header className="break-inside-avoid">
+                        <img
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(
+                            "https://paleomedical.health"
+                          )}`}
+                          alt="QR"
+                          className="absolute top-4 right-4 h-14 w-14 object-contain"
+                          onError={(e) => {
+                            const target = e.currentTarget as HTMLImageElement;
+                            target.style.display = "none";
+                          }}
+                        />
 
-              <div className="flex flex-wrap items-center gap-4 border-b border-slate-200 bg-white px-6 py-3 text-[11px] text-slate-600">
-                <div>
-                  <span className="font-semibold text-slate-700">Ordered on:</span>{" "}
-                  {recordReportEntry.orderedAt
-                    ? new Date(recordReportEntry.orderedAt).toLocaleString()
-                    : "—"}
-                </div>
-                <div>
-                  <span className="font-semibold text-slate-700">Collected on:</span>{" "}
-                  {recordReportEntry.collectedAt
-                    ? new Date(recordReportEntry.collectedAt).toLocaleString()
-                    : "—"}
-                </div>
-                <div>
-                  <span className="font-semibold text-slate-700">Reported on:</span>{" "}
-                  {recordReportEntry.recordedAt
-                    ? new Date(recordReportEntry.recordedAt).toLocaleString()
-                    : "—"}
-                </div>
-              </div>
-
-              <div className="px-6 py-4">
-                <div className="rounded-xl border border-slate-200">
-                  <div className="grid grid-cols-[2fr_1fr_1fr_1fr] gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide bg-[#e6ffee] text-slate-600">
-                    <span>Test</span>
-                    <span>Result</span>
-                    <span>Flag</span>
-                    <span className="text-right">Biological Reference Range / Unit</span>
-                  </div>
-                  <div className="divide-y divide-slate-100">
-                    {(() => {
-                      const entries = recordReportEntry.entries || [];
-                      if (entries.length === 0) {
-                        return <div className="px-4 py-4 text-sm text-slate-500">No tests listed.</div>;
-                      }
-                      const byCategory = entries.reduce<Record<string, LabRecordEntry[]>>((acc, entry) => {
-                        const category = getTestCategory(entry.test_type);
-                        acc[category] = acc[category] || [];
-                        acc[category].push(entry);
-                        return acc;
-                      }, {});
-                      const categoryOrder = Object.keys(LAB_TEST_GROUPS);
-                      const orderedCategories = [
-                        ...categoryOrder.filter((cat) => byCategory[cat]?.length),
-                        ...Object.keys(byCategory).filter((cat) => !categoryOrder.includes(cat)),
-                      ];
-                      return orderedCategories.map((category) => (
-                        <div key={category} className="py-1">
-                          <div className="rounded bg-slate-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                            {category}
-                          </div>
-                          {byCategory[category].map((entry, idx) => {
-                            const entryKey = `${entry.id ?? "idx"}-${idx}-${entry.test_type}`;
-                            const selectedFlag = recordReportFlags[entryKey] ?? "none";
-                            return (
-                              <div
-                                key={`${entry.test_type}-${entry.id}-${idx}`}
-                                className="grid grid-cols-[2fr_1fr_1fr_1fr] items-center gap-2 px-4 py-3 text-sm text-slate-700"
-                              >
-                                <span className="font-semibold text-slate-900">{entry.test_type}</span>
-                                <span className="text-slate-700">{entry.summary || "—"}</span>
-                                <div className="flex items-center">
-                                  <select
-                                    value={selectedFlag}
-                                    onChange={(e) =>
-                                      setRecordReportFlags((prev) => ({
-                                        ...prev,
-                                        [entryKey]: e.target.value,
-                                      }))
-                                    }
-                                    className={`w-full rounded-full px-3 py-1 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-200 ${getFlagClasses(
-                                      selectedFlag
-                                    )}`}
-                                  >
-                                    {flagOptions.map((opt) => (
-                                      <option key={opt.value} value={opt.value}>
-                                        {opt.label}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </div>
-                                <span className="text-right text-xs text-slate-400">—</span>
+                        <div className="relative flex items-start justify-center gap-4">
+                          <div className="flex items-center justify-center gap-3">
+                            <img
+                              src="/paleologo.png"
+                              alt="Paleo Medicals"
+                              className="h-16 w-16 object-contain"
+                            />
+                            <div className="flex flex-col items-start text-left">
+                              <div className="uppercase text-[20px] font-extrabold tracking-wide text-[#008000]">
+                                PALEO MEDICALS
                               </div>
-                            );
-                          })}
+                              <div className="text-[13px] font-medium tracking-wide text-slate-500 italic">
+                                Doctor to Community
+                              </div>
+                              <div className="text-[14px] font-medium text-slate-600">
+                                Buziga, Lukuli Link
+                              </div>
+                            </div>
+                          </div>
                         </div>
-                      ));
-                    })()}
-                  </div>
-                </div>
+                        <div className="text-[14px] text-center font-semibold text-[#400080]">
+                          General Medicine, Pediatrics, Obstetrics, Gynecology, Lab and Ultra Sound scan
+                        </div>
+                        <span className="flex items-center justify-center gap-4 text-[12px] text-slate-600 print:text-[12px]">
+                          <span className="flex items-center text-center gap-1">
+                            <img src="/phone-icon.png" alt="Phone" className="h-4 w-4 object-contain print:h-4 print:w-4" 
+                              width={16}
+                              height={16}
+                              style={{ display: "inline-block", verticalAlign: "middle" }}
+                            />
+                            0705011745/0786053163
+                          </span>
 
-                <div className="mt-4 space-y-3">
-                  <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                    <label className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                      Comment
-                    </label>
-                    <textarea
-                      className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                      rows={3}
-                      value={recordReportComment}
-                      onChange={(e) => setRecordReportComment(e.target.value)}
-                      placeholder="Enter technician comment for this report"
-                    />
-                  </div>
-                </div>
-              </div>
+                          <span className="flex items-center gap-1">
+                            <img src="/email-icon.png" alt="Email" className="h-4 w-4 object-contain print:h-4 print:w-4"
+                              width={16}
+                              height={16}
+                              style={{ display: "inline-block", verticalAlign: "middle" }}
+                            />
+                            admin@paleomedicals.health
+                          </span>
 
-              <div className="border-t border-slate-200 px-6 py-4">
-                <div className="flex flex-wrap items-start justify-between gap-6">
-                  <div className="flex-1">
-                    <div className="text-xs font-semibold text-slate-500">Signature</div>
-                    <div className="mt-1 text-lg text-slate-400">.........................</div>
-                    <div className="mt-1 text-sm font-semibold text-slate-900">
-                      {recordReportEntry.recordedBy || "Laboratory Technician"}
-                    </div>
-                    <div className="text-xs text-slate-600">Laboratory Technician</div>
+                          <span className="flex items-center gap-1">
+                            <img src="/web-icon.png" alt="Website" className="h-4 w-4 object-contain print:h-4 print:w-4" 
+                              width={16}
+                              height={16}
+                              style={{ display: "inline-block", verticalAlign: "middle" }}
+                            />
+                            https://paleomedicals.health
+                          </span>
+                        </span>
+                        {/* horizontal separator */}
+                        <div
+                          style={{
+                            height: "3px",
+                            width: "100%",
+                            background: "#26004d", // from Tailwind green-400 → green-500 → green-600
+                          }}
+                        />
+                    </header>
                   </div>
-                  <div className="text-right text-[11px] text-slate-600">
-                    <div>
-                      Generated on:{" "}
-                      {recordReportGeneratedAt
-                        ? new Date(recordReportGeneratedAt).toLocaleString()
-                        : "—"}
+                  <h3 className="text-base font-semibold text-center mt-2 uppercase text-slate-900">Laboratory Report</h3>
+
+                    <div className="grid grid-cols-[1.2fr_0.8fr] items-stretch gap-3 border-b border-slate-200 bg-white px-6 py-4">
+                      <div className=" border border-slate-200 bg-white px-4 py-3">
+                        <div className="text-xs font-semibold text-slate-500">Name</div>
+                          <div className="text-base font-semibold text-slate-900">
+                            {recordReportEntry.patientName?.includes(",")
+                            ? recordReportEntry.patientName.split(",").reverse().join(" ").trim()
+                            : recordReportEntry.patientName || "—"}
+
+                          </div>
+                          <div className="mt-1 flex flex-wrap gap-4 text-[13px] text-slate-600">
+                            <span>Age: {recordReportEntry.patientAge ?? "—"}</span>
+                            <span>Sex: {recordReportEntry.patientSex || "—"}</span>
+                            <span>PID: {recordReportEntry.patientIdentifier || "—"}</span>
+                          </div>
+                      </div>
+                      <div className="rounded-[2px] border border-slate-200 bg-white px-4 py-3">
+                        <div>
+                          <span className="text-[13px] text-slate-600">Ordered on: </span>
+                          <span className="text-[10px] font-semibold text-slate-600">{recordReportEntry.orderedAt ? new Date(recordReportEntry.orderedAt).toLocaleString() : "—"}</span>
+                        </div>
+                        <div>
+                          <span className="text-[13px] text-slate-600">Collected on: </span>
+                          <span className="text-[10px] font-semibold text-slate-600">{recordReportEntry.collectedAt ? new Date(recordReportEntry.collectedAt).toLocaleString() : "—"}</span>
+                        </div>
+                        <div>
+                          <span className="text-[13px] text-slate-600">Reported on: </span>
+                          <span className="text-[10px] font-semibold text-slate-600">{recordReportEntry.recordedAt ? new Date(recordReportEntry.recordedAt).toLocaleString() : "—"}</span>
+                        </div>
+
+                      </div>
                     </div>
-                    <div>Page 1 of 1</div>
-                  </div>
+
+                    <div className="px-6 py-4">
+                      <div className=" border border-slate-200">
+                        <div className="grid grid-cols-[2fr_1fr_1fr_1fr] gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide bg-gray-80 text-slate-600">
+                          <span>Test</span>
+                          <span>Result</span>
+                          <span></span>
+                          <span className="text-right">Unit</span>
+                        </div>
+                        <div className="divide-y divide-slate-100">
+                          {(() => {
+                            const entries = recordReportEntry.entries || [];
+                            if (entries.length === 0) {
+                              return <div className="px-4 py-4 text-sm text-slate-500">No tests listed.</div>;
+                            }
+                            const byCategory = entries.reduce<Record<string, LabRecordEntry[]>>((acc, entry) => {
+                              const category = getTestCategory(entry.test_type);
+                              acc[category] = acc[category] || [];
+                              acc[category].push(entry);
+                              return acc;
+                            }, {});
+                            const categoryOrder = Object.keys(LAB_TEST_GROUPS);
+                            const orderedCategories = [
+                              ...categoryOrder.filter((cat) => byCategory[cat]?.length),
+                              ...Object.keys(byCategory).filter((cat) => !categoryOrder.includes(cat)),
+                            ];
+                            return orderedCategories.map((category) => (
+                              <div key={category} className="py-1">
+                                <div className="rounded bg-[#eeffe6] px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                                  {category}
+                                </div>
+                                {byCategory[category].map((entry, idx) => {
+                                  const entryKey = `${entry.id ?? "idx"}-${idx}-${entry.test_type}`;
+                                  const selectedFlag = recordReportFlags[entryKey] ?? "none";
+                                  return (
+                                    <div
+                                      key={`${entry.test_type}-${entry.id}-${idx}`}
+                                      className={`grid grid-cols-[2fr_1fr_1fr_1fr] items-center gap-2 px-4 py-0.5 text-[12px] text-slate-700 ${
+                                        idx % 2 === 0 ? "bg-white print:bg-white" : "bg-gray-100 print:bg-gray-100"
+                                      }`}
+                                    >
+                                      <span className="font-semibold text-slate-900">{entry.test_type}</span>
+                                      <span className="text-slate-700">{entry.summary || "—"}</span>
+                                      <div className="flex items-center">
+                                        <select
+                                          value={selectedFlag}
+                                          onChange={(e) =>
+                                            setRecordReportFlags((prev) => ({
+                                              ...prev,
+                                              [entryKey]: e.target.value,
+                                            }))
+                                          }
+                                          className={`w-full appearance-none rounded-full px-3 py-1 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-200 ${getFlagClasses(
+                                            selectedFlag
+                                          )}`}
+                                        >
+                                          {flagOptions.map((opt) => (
+                                            <option key={opt.value} value={opt.value}>
+                                              {opt.label}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                      <span className="text-right text-xs text-slate-400">—</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ));
+                          })()}
+                        </div>
+                      </div>
+
+                      <div className="mt-4 space-y-3">
+                        <div className="border border-slate-200 bg-white px-4 py-3">
+                          <label className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                            Comment
+                          </label>
+                          <textarea
+                            className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                            rows={3}
+                            value={recordReportComment}
+                            onChange={(e) => setRecordReportComment(e.target.value)}
+                            placeholder="Enter technician comment for this report"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-slate-200 px-6 py-4">
+                      <div className="flex flex-wrap items-start justify-between gap-6">
+                        <div className="flex-1">
+                          <div className="text-xs font-semibold text-slate-500">Signature</div>
+                          <div className="mt-1 text-lg text-slate-400">___________________________</div>
+                          <div className="mt-1 text-sm font-semibold text-slate-900">
+                            {recordReportEntry.recordedBy || "Laboratory Technician"}
+                          </div>
+                          <div className="text-xs text-slate-600">Laboratory Technician</div>
+                        </div>
+                      </div>
+                    </div>
+                    {/* ===== FOOTER ===== */}
+                    <footer className="mt-10 pt-4 border-t text-center text-xs text-slate-500">
+                      General Medicine · Pediatrics · Obstetrics · Gynecology · Lab & Ultrasound
+                      <div className="mt-1">
+                        PALEO MEDICALS — Doctor to Community
+                      </div>
+                    </footer>
+                    
+
+                  {/* ===== REPORT CONTENT ENDS HERE ===== */}
+
                 </div>
               </div>
             </div>
-          </div>
-        </>
-      )}
+          </>
+        )}
+
     </main>
   );
 };
