@@ -678,7 +678,7 @@ const LabModule = ({
                 }}
                 >
 
-                  <div className="page w-[210mm] border-b border-slate-200 bg-white px-6 py-4 relative">
+                  <div className="page border-b border-slate-200 bg-white px-6 py-4 relative">
                     <header className="break-inside-avoid">
                         <img
                           src={`https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(
@@ -787,7 +787,7 @@ const LabModule = ({
                       </div>
                     </div>
 
-                    <div className="page w-[210mm] px-6 py-4">
+                    <div className="page px-6 py-4">
                       <div className=" border border-slate-200">
                         <div className="grid grid-cols-[2fr_1fr_1fr_1fr] gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide bg-gray-80 text-slate-600">
                           <span>Test</span>
@@ -826,9 +826,9 @@ const LabModule = ({
                                       className={`grid grid-cols-[2fr_1fr_1fr_1fr] items-center gap-2 px-4 py-0.5 text-[12px] text-slate-700 ${
                                         idx % 2 === 0 ? "bg-white print:bg-white" : "bg-gray-100 print:bg-gray-100"
                                       }`}
-                                      //style={{
-                                        //breakInside: "avoid",   // prevent splitting mid-row
-                                      //}}
+                                      style={{
+                                        breakInside: "avoid",   // prevent splitting mid-row
+                                      }}
                                     >
                                       <span className="font-semibold text-slate-900">{entry.test_type}</span>
                                       <span className="text-slate-700">{entry.summary || "—"}</span>
@@ -862,7 +862,7 @@ const LabModule = ({
                         </div>
                       </div>
 
-                      <div className="page mt-4 w-[210mm] space-y-3">
+                      <div className="page mt-4 space-y-3">
                         <div className="border border-slate-200 bg-white px-4 py-3">
                           <label className="text-xs font-semibold uppercase tracking-wide text-slate-600">
                             Comment
