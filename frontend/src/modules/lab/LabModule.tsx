@@ -93,7 +93,6 @@ const LabModule = ({
   const [ordersExportOpen, setOrdersExportOpen] = useState(false);
   const [recordActionOpenId, setRecordActionOpenId] = useState<string | number | null>(null);
   const [recordReportEntry, setRecordReportEntry] = useState<RecordReportPayload | null>(null);
-  const [recordReportGeneratedAt, setRecordReportGeneratedAt] = useState<string | null>(null);
   const [recordReportComment, setRecordReportComment] = useState<string>("");
   const [recordReportFlags, setRecordReportFlags] = useState<Record<string, string>>({});
   const flagOptions = [
@@ -447,7 +446,6 @@ const LabModule = ({
                                     initialFlags[`${entry.id ?? "idx"}-${entryIdx}-${entry.test_type}`] = "none";
                                   });
                                   setRecordReportFlags(initialFlags);
-                                  setRecordReportGeneratedAt(new Date().toISOString());
                                   setRecordReportComment("");
                                 }}
                               >
