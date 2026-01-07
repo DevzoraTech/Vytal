@@ -2016,8 +2016,11 @@ function App() {
   ]);
 
   const handleLabResultSubmit = useCallback(async () => {
+    if (isSaving) return; // <-- prevent double clicks
+    setIsSaving(true);    // <-- disable button immediately
     if (!token) {
       setLabError("You must be logged in to record lab results.");
+      setIsSaving(false); // <-- re-enable if exiting early
       return;
     }
     if (!labResultForm.triageEntryId) {
@@ -2155,7 +2158,9 @@ function App() {
       setLabError(
         err instanceof Error ? err.message : "Unable to save lab result"
       );
-    }
+    } finally {
+    setIsSaving(false); // <-- always re-enable after fetch
+  }
   }, [
     API_BASE_URL,
     labResultForm,
@@ -2171,6 +2176,7 @@ function App() {
     labCategoricalOptions,
     loadPatients,
     searchTerm,
+    isSaving,
   ]);
 
   useEffect(() => {
@@ -5536,9 +5542,10 @@ function App() {
             <button
               type="button"
               onClick={handleLabResultSubmit}
-              disabled={labSaveDisabled}
+               disabled={labSaveDisabled || isSaving}
               className="rounded-full bg-[#008000] px-5 py-2 text-sm font-semibold text-white shadow-subtle hover:bg-[#008000] disabled:opacity-50 disabled:cursor-not-allowed"
             >
+              {isSaving ? "Saving..." : "Save"}
               Save
             </button>
           </div>
