@@ -446,7 +446,6 @@ const LabModule = ({
                                     initialFlags[`${entry.id ?? "idx"}-${entryIdx}-${entry.test_type}`] = "none";
                                   });
                                   setRecordReportFlags(initialFlags);
-                                  setRecordReportGeneratedAt(new Date().toISOString());
                                   setRecordReportComment("");
                                 }}
                               >
