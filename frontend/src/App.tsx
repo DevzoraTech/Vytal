@@ -467,6 +467,7 @@ function App() {
       }
     >
   >({});
+  const [isSaving, setIsSaving] = useState(false);
   const [triageSaveError, setTriageSaveError] = useState<string | null>(null);
   const [carePlanNumDays, setCarePlanNumDays] = useState<number>(0);
   const [carePlanSchedule, setCarePlanSchedule] = useState<ScheduleItem[]>([]);
