@@ -5545,7 +5545,6 @@ function App() {
               className="rounded-full bg-[#008000] px-5 py-2 text-sm font-semibold text-white shadow-subtle hover:bg-[#008000] disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSaving ? "Saving..." : "Save"}
-              Save
             </button>
           </div>
         </div>
