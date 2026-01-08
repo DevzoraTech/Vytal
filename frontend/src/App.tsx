@@ -4707,7 +4707,7 @@ function App() {
           console.error("Error pre-filling care plan:", e);
         }
       } else {
-        // Reset for new plan
+        //Reset for new plan
         setCarePlanSchedule([]);
         setCarePlanNumDays(0);
       }
@@ -5541,10 +5541,10 @@ function App() {
             <button
               type="button"
               onClick={handleLabResultSubmit}
-               disabled={labSaveDisabled || isSaving}
+               disabled={labSaveDisabled}
               className="rounded-full bg-[#008000] px-5 py-2 text-sm font-semibold text-white shadow-subtle hover:bg-[#008000] disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isSaving ? "Saving..." : "Save"}
+              Save
             </button>
           </div>
         </div>
